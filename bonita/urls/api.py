@@ -1,4 +1,8 @@
 # bonita/urls/api.py
 from django.urls import path
-from bonita.views import iniciar_proyecto_api
-urlpatterns = [ path("iniciar/", iniciar_proyecto_api, name="bonita_iniciar") ]
+from bonita.views import login_api, iniciar_proyecto_api
+
+urlpatterns = [
+    path("login/",   login_api,            name="bonita_login_api"),
+    path("iniciar/", iniciar_proyecto_api, name="bonita_iniciar"),
+]

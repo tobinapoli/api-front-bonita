@@ -64,3 +64,33 @@ class BonitaClient:
         r = self.s.post(f"{self.api}/bpm/userTask/{task_id}/execution", json=contract, headers=self._h(), timeout=self._timeout)
         r.raise_for_status()
         return self._json(r)
+    def flow_nodes(self, case_id: str, **f):
+        params = [("f", f"caseId={case_id}"), ("p","0"), ("c","50")]
+        for k,v in f.items():
+            params.append(("f", f"{k}={v}"))
+        r = self.s.get(f"{self.api}/bpm/flowNode", params=params, headers=self._h(), timeout=self._timeout)
+        r.raise_for_status()
+        return self._json(r) or []
+
+    def wait_task_outcome(self, case_id: str, task_name: str, timeout_sec=15, interval_sec=0.5) -> dict:
+        """
+        Espera hasta que la tarea pase a completed (implícito) o a failed.
+        Devuelve {"state":"ok"} o {"state":"failed"}.
+        """
+        import time
+        deadline = time.time() + timeout_sec
+        while time.time() < deadline:
+            # ¿sigue lista?
+            ready = self.flow_nodes(case_id, state="ready", name=task_name)
+            if ready:
+                time.sleep(interval_sec)
+                continue
+            # ¿falló?
+            failed = self.flow_nodes(case_id, state="failed", name=task_name)
+            if failed:
+                return {"state": "failed"}
+            # Si no está ni ready ni failed, asumimos que se completó bien (ya no aparece)
+            return {"state": "ok"}
+        # timeout: último chequeo de fallo
+        failed = self.flow_nodes(case_id, state="failed", name=task_name)
+        return {"state": "failed" if failed else "unknown"}
