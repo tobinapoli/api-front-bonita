@@ -1,0 +1,41 @@
+# .gitignore
+
+# Entornos virtuales
+.venv/
+venv/
+
+# Archivos de entorno
+.env
+
+# Archivos de base de datos locales
+*.sqlite3
+
+# Archivos compilados de Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Archivos temporales
+*.log
+*.pot
+*.mo
+*.pid
+*.seed
+*.bak
+*.swp
+.DS_Store
+Thumbs.db
+
+# Django
+/staticfiles/
+media/
+
+# VSCode y entorno
+.vscode/
+.idea/
+
+# Archivos de backup o tests
+*.coverage
+coverage.xml
+htmlcov/
