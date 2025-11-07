@@ -82,41 +82,45 @@
   </div>
 
   <script>
-  document.getElementById("proyectoForm").addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const form = e.target;
-    const data = {
-      nombre: form["nombre"].value,
-      metadata: {
-        fechaInicioPrevista: form["metadata.fechaInicioPrevista"].value,
-        fechaFinPrevista: form["metadata.fechaFinPrevista"].value,
-      },
-      planTrabajo: {
-        etapas: [{
-          nombre: form["planTrabajo.etapas[0].nombre"].value,
-          fechaInicioPrevista: form["planTrabajo.etapas[0].fechaInicioPrevista"].value,
-          fechaFinPrevista: form["planTrabajo.etapas[0].fechaFinPrevista"].value,
-        }]
-      },
-      planEconomico: {
-        monedaBase: form["planEconomico.monedaBase"].value,
-        presupuestoPorRubro: [{
-          rubro: form["planEconomico.presupuestoPorRubro[0].rubro"].value,
-          monto: parseFloat(form["planEconomico.presupuestoPorRubro[0].monto"].value),
-        }]
-      }
-    };
+function qp(name){ return new URLSearchParams(location.search).get(name); }
 
-    const res = await fetch("/api/bonita/iniciar/", {
-      method: "POST",
-      headers: {"Content-Type": "application/json"},
-      body: JSON.stringify(data)
-    });
+document.getElementById("proyectoForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const form = e.target;
+  const data = {
+    caseId: qp("case"), // <--- usamos el case que dejó el login
+    nombre: form["nombre"].value,
+    metadata: {
+      fechaInicioPrevista: form["metadata.fechaInicioPrevista"].value,
+      fechaFinPrevista: form["metadata.fechaFinPrevista"].value,
+    },
+    planTrabajo: {
+      etapas: [{
+        nombre: form["planTrabajo.etapas[0].nombre"].value,
+        fechaInicioPrevista: form["planTrabajo.etapas[0].fechaInicioPrevista"].value,
+        fechaFinPrevista: form["planTrabajo.etapas[0].fechaFinPrevista"].value,
+      }]
+    },
+    planEconomico: {
+      monedaBase: form["planEconomico.monedaBase"].value,
+      presupuestoPorRubro: [{
+        rubro: form["planEconomico.presupuestoPorRubro[0].rubro"].value,
+        monto: parseFloat(form["planEconomico.presupuestoPorRubro[0].monto"].value),
+      }]
+    }
+  };
 
-    const json = await res.json();
-    document.getElementById("resultado").innerHTML =
-      `<pre class="bg-light border p-3 mt-3">${JSON.stringify(json, null, 2)}</pre>`;
+  const res = await fetch("/api/bonita/iniciar/", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify(data)
   });
-  </script>
+
+  const json = await res.json();
+  document.getElementById("resultado").innerHTML =
+    `<pre class="bg-light border p-3 mt-3">${JSON.stringify(json, null, 2)}</pre>`;
+});
+</script>
+
 </body>
 </html>
