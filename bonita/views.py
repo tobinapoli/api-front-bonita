@@ -1,4 +1,5 @@
 # bonita/views.py
+
 from __future__ import annotations
 
 import json
@@ -35,7 +36,7 @@ def nuevo_proyecto_page(req: HttpRequest):
 
 
 # ---------------------------
-# API: Login -> instancia proceso y ejecuta tarea "Login"
+# API: Login -> instancia proceso CON CONECTOR DE ENTRADA
 # ---------------------------
 @csrf_exempt
 def login_api(req: HttpRequest):
@@ -50,7 +51,7 @@ def login_api(req: HttpRequest):
 
     try:
         cli = BonitaClient()
-        cli.login()
+        cli.login()  # Login del cliente Python a Bonita (necesario)
 
         proc_id = cli.get_process_definition_id(
             settings.BONITA_PROCESS_NAME if hasattr(settings, "BONITA_PROCESS_NAME") else "ProjectPlanning",
@@ -59,55 +60,44 @@ def login_api(req: HttpRequest):
         if not proc_id:
             return JsonResponse({"ok": False, "error": "Proceso ProjectPlanning 1.0 no encontrado"}, status=500)
 
-        # 1) Instanciar el caso
-        inst = cli.instantiate_process(proc_id, {})
+        # 1) Instanciar el caso PASANDO LAS CREDENCIALES AL CONTRATO
+        # El contrato de Bonita (paso 1) debe llamarse 'apiUser' y 'apiPass'
+        payload = {
+            "apiUser": api_user,
+            "apiPass": api_pass
+        }
+        inst = cli.instantiate_process(proc_id, payload)
         case_id = (inst or {}).get("caseId") or (inst or {}).get("id")
         if not case_id:
             return JsonResponse({"ok": False, "error": "No se obtuvo caseId"}, status=500)
         case_id = str(case_id)
 
-        # 2) Esperar la tarea "Login", asignarla y ejecutarla con el contract
-        task = cli.wait_ready_task_in_case(case_id, task_name="Login", timeout_sec=30)
-        if not task:
-            return JsonResponse({"ok": False, "error": "La tarea Login no quedó ready"}, status=500)
+        # 2) YA NO SE ESPERA, ASIGNA NI EJECUTA LA TAREA "Login".
+        # El conector de entrada se ejecutó DURANTE la instanciación.
 
-        assignee_username = getattr(settings, "BONITA_ASSIGNEE", "walter.bates")
-        user_id = cli.get_user_id_by_username(assignee_username)
-        if not user_id:
-            return JsonResponse({"ok": False, "error": "Assignee Bonita no encontrado"}, status=500)
-
-        cli.assign_task(task["id"], user_id)
-        cli.execute_task(task["id"], {"apiUser": api_user, "apiPass": api_pass})
-
-        # 3) Esperar resultado de la tarea Login (completada o fallida)
-        outcome = cli.wait_task_outcome(case_id, "Login", timeout_sec=30, interval_sec=0.6)
-        if outcome.get("state") == "failed":
-            return JsonResponse(
-                {
-                    "ok": False,
-                    "error": "La tarea Login falló en Bonita (ver Conectores de salida).",
-                    "detail": "Revisá cloudApiBase, payload y mapeos del conector; desactivá 'fallar en 4xx/5xx'.",
-                },
-                status=401,
-            )
-
-        # 4) Confirmar que apareció la siguiente tarea
+        # 3) Confirmar que apareció la siguiente tarea
+        # Si esto falla, significa que el CONECTOR DE ENTRADA falló (malas credenciales, etc.)
+        # y el Gateway en Bonita desvió el flujo a un fin de error.
         nxt = cli.wait_ready_task_in_case(
             case_id, task_name="Definir plan de trabajo y economico", timeout_sec=30
         )
+        
         if not nxt:
+            # El conector de entrada falló. La API externa rechazó las credenciales.
             return JsonResponse(
                 {
                     "ok": False,
-                    "error": "Login en Bonita no habilitó la siguiente tarea.",
-                    "detail": "Si el Login no falló, puede ser demora del conector: ver variables jwtAccess/jwtRefresh/statusCode.",
+                    "error": "Login fallido. Verifique credenciales.",
+                    "detail": "El conector de entrada del proceso Bonita no pudo autenticarse contra la API externa.",
                 },
-                status=401,
+                status=401, # 401 Unauthorized es apropiado
             )
 
+        # ¡Éxito! El conector funcionó y la siguiente tarea está lista.
         return JsonResponse({"ok": True, "caseId": case_id}, status=200)
 
     except Exception as e:
+        # Esto captura errores de conexión con Bonita, timeouts, etc.
         return JsonResponse({"ok": False, "error": "Fallo integración Bonita", "detail": str(e)}, status=500)
 
 
@@ -135,10 +125,13 @@ def iniciar_proyecto_api(req: HttpRequest):
         if not user_id:
             return JsonResponse({"error": "Usuario Bonita no encontrado", "detail": assignee_username}, status=500)
 
-        # 1) Si no vino caseId, instanciamos y pasamos por Login aquí
+        # 1) Si no vino caseId, instanciamos y pasamos login en el conector
         if case_id_in:
             case_id = case_id_in
         else:
+            # Esta lógica se usa si el usuario va directo a 'nuevo.html' sin
+            # pasar por 'login.html'. Asumimos que el payload 'data'
+            # también trae 'apiUser' y 'apiPass'.
             proc_id = cli.get_process_definition_id(
                 settings.BONITA_PROCESS_NAME if hasattr(settings, "BONITA_PROCESS_NAME") else "ProjectPlanning",
                 settings.BONITA_PROCESS_VERSION if hasattr(settings, "BONITA_PROCESS_VERSION") else "1.0",
@@ -146,31 +139,32 @@ def iniciar_proyecto_api(req: HttpRequest):
             if not proc_id:
                 return JsonResponse({"error": "No se encontró ProjectPlanning 1.0"}, status=500)
 
-            inst = cli.instantiate_process(proc_id, {})
+            api_user = str(data.get("apiUser") or data.get("username") or "").strip()
+            api_pass = str(data.get("apiPass") or data.get("password") or "").strip()
+            
+            # Instanciamos pasando las credenciales al conector de entrada
+            payload_instanciacion = {
+                "apiUser": api_user,
+                "apiPass": api_pass
+            }
+            inst = cli.instantiate_process(proc_id, payload_instanciacion)
             case_id = str((inst or {}).get("caseId") or (inst or {}).get("id") or "")
             if not case_id:
                 return JsonResponse({"error": "No se obtuvo caseId"}, status=500)
 
-            api_user = str(data.get("apiUser") or data.get("username") or "").strip()
-            api_pass = str(data.get("apiPass") or data.get("password") or "").strip()
-            login_task = cli.wait_ready_task_in_case(case_id, task_name="Login", timeout_sec=30)
-            if login_task:
-                cli.assign_task(login_task["id"], user_id)
-                payload_login: Dict[str, Any] = {"apiUser": api_user, "apiPass": api_pass} if (api_user and api_pass) else {}
-                cli.execute_task(login_task["id"], payload_login)
-                outcome = cli.wait_task_outcome(case_id, "Login", timeout_sec=30, interval_sec=0.6)
-                if outcome.get("state") == "failed":
-                    return JsonResponse(
-                        {"ok": False, "error": "La tarea Login falló (ver conector)."}, status=401
-                    )
+            # --- TODO EL BLOQUE DE "wait_ready_task_in_case(..., task_name="Login")" SE ELIMINA ---
 
         # 2) Ejecutar "Definir plan de trabajo y economico"
+        # Usamos este 'wait' para verificar que el caso (nuevo o existente)
+        # está en esta tarea. Si es un caso nuevo, también confirma
+        # que el conector de entrada de login funcionó.
         task = cli.wait_ready_task_in_case(case_id, task_name="Definir plan de trabajo y economico", timeout_sec=30)
         if not task:
             return JsonResponse(
                 {
                     "ok": False,
-                    "error": "No apareció la tarea 'Definir plan de trabajo y economico'. Revisá si 'Login' quedó fallida.",
+                    "error": "No apareció la tarea 'Definir plan de trabajo y economico'.",
+                    "detail": "Si es un caso nuevo, el login (conector de entrada) pudo haber fallado.",
                 },
                 status=409,
             )
