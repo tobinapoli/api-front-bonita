@@ -1,4 +1,3 @@
-# bonita/views.py
 from __future__ import annotations
 import json
 from typing import Any, Dict
@@ -9,23 +8,39 @@ from django.views.decorators.csrf import csrf_exempt
 from .bonita_client import BonitaClient
 from .validators import validate_iniciar_payload
 
-# --------------------------- Pages (HTML) ---------------------------
+
+# --------------------------- Páginas HTML ---------------------------
+
 def login_page(req: HttpRequest):
     return render(req, "bonita/login.html")
+
 
 def nuevo_proyecto_page(req: HttpRequest):
     return render(req, "bonita/nuevo.html")
 
+
+def revisar_pedidos_page(req: HttpRequest):
+    return render(req, "bonita/revisar.html")
+
+
 # --------------------------- Helpers ---------------------------
+
 def _json(req: HttpRequest) -> Dict[str, Any]:
     try:
         return json.loads(req.body.decode("utf-8")) if req.body else {}
     except Exception:
         return {}
 
-# --------------------------- API: Login -> instancia proceso con conector de entrada ---------------------------
+
+# --------------------------- API: LOGIN ---------------------------
+
 @csrf_exempt
 def login_api(req: HttpRequest):
+    """
+    1. Recibe usuario y contraseña del frontend.
+    2. Inicia sesión en Bonita y crea una instancia del proceso ProjectPlanning.
+    3. Devuelve el caseId sin esperar a que aparezcan las tareas (flujo no bloqueante).
+    """
     if req.method != "POST":
         return JsonResponse({"error": "POST only"}, status=405)
 
@@ -39,6 +54,7 @@ def login_api(req: HttpRequest):
         cli = BonitaClient()
         cli.login()
 
+        # Buscar proceso ProjectPlanning
         proc_id = cli.get_process_definition_id(
             getattr(settings, "BONITA_PROCESS_NAME", "ProjectPlanning"),
             getattr(settings, "BONITA_PROCESS_VERSION", "1.0"),
@@ -46,44 +62,35 @@ def login_api(req: HttpRequest):
         if not proc_id:
             return JsonResponse({"ok": False, "error": "Proceso ProjectPlanning 1.0 no encontrado"}, status=500)
 
-        # Instancio el caso pasando user/pass al CONTRATO de inicio (ejecuta el conector de ENTRADA “login”)
+        # Instanciar proceso con usuario y password como payload
         inst = cli.instantiate_process(proc_id, {"apiUser": api_user, "apiPass": api_pass})
-        case_id = (inst or {}).get("caseId") or (inst or {}).get("id")
+        case_id = str((inst or {}).get("caseId") or (inst or {}).get("id") or "")
         if not case_id:
             return JsonResponse({"ok": False, "error": "No se obtuvo caseId"}, status=500)
-        case_id = str(case_id)
 
-        # Verifico que apareció la siguiente tarea; si no, el login del conector falló y el gateway cortó el flujo
-        nxt = cli.wait_ready_task_in_case(case_id, task_name="Definir plan de trabajo y economico", timeout_sec=30)
-        if not nxt:
-            return JsonResponse(
-                {
-                    "ok": False,
-                    "error": "Login fallido. Verifique credenciales.",
-                    "detail": "El conector de entrada del proceso Bonita no pudo autenticarse contra la API externa.",
-                },
-                status=401,
-            )
-
+        # 🔹 Antes se esperaba la tarea "Definir plan...", ahora devolvemos directamente
+        #    el caseId para evitar bloqueos o timeouts en Bonita.
         return JsonResponse({"ok": True, "caseId": case_id}, status=200)
 
     except Exception as e:
-        return JsonResponse({"ok": False, "error": "Fallo integración Bonita", "detail": str(e)}, status=500)
+        return JsonResponse(
+            {"ok": False, "error": "Fallo integración Bonita", "detail": str(e)},
+            status=500,
+        )
 
-# --------------------------- API: Iniciar/continuar proyecto ---------------------------
+
+# --------------------------- API: Iniciar proyecto ---------------------------
+
 @csrf_exempt
 def iniciar_proyecto_api(req: HttpRequest):
     """
-    Recibe los datos del formulario externo y EMPUJA el contrato de la tarea
-    “Definir plan de trabajo y economico”. La creación real del Proyecto en API
-    NO se hace acá; la hace Bonita con un CONECTOR DE SALIDA (ON_FINISH) usando el JWT 'access'.
+    Empuja el contrato de 'Definir plan de trabajo y económico'.
+    Si no existe un caseId válido, instancia el proceso.
     """
     if req.method != "POST":
         return JsonResponse({"error": "POST only"}, status=405)
 
     data = _json(req)
-
-    # Validación del payload “de negocio” (fechas, etapas, etc.) para tu propio front si querés mantenerla
     errs = validate_iniciar_payload(data)
     if errs:
         return JsonResponse({"ok": False, "errors": errs}, status=400)
@@ -97,9 +104,12 @@ def iniciar_proyecto_api(req: HttpRequest):
         assignee_username = getattr(settings, "BONITA_ASSIGNEE", "walter.bates")
         user_id = cli.get_user_id_by_username(assignee_username)
         if not user_id:
-            return JsonResponse({"error": "Usuario Bonita no encontrado", "detail": assignee_username}, status=500)
+            return JsonResponse(
+                {"error": "Usuario Bonita no encontrado", "detail": assignee_username},
+                status=500,
+            )
 
-        # Caso: venís del login.html (con caseId). Si no, instancio y el conector de entrada hará el login.
+        # Si no vino caseId, crear nueva instancia
         if case_id_in:
             case_id = case_id_in
         else:
@@ -109,30 +119,22 @@ def iniciar_proyecto_api(req: HttpRequest):
             )
             if not proc_id:
                 return JsonResponse({"error": "No se encontró ProjectPlanning 1.0"}, status=500)
-
             api_user = str(data.get("apiUser") or data.get("username") or "").strip()
             api_pass = str(data.get("apiPass") or data.get("password") or "").strip()
-
             inst = cli.instantiate_process(proc_id, {"apiUser": api_user, "apiPass": api_pass})
             case_id = str((inst or {}).get("caseId") or (inst or {}).get("id") or "")
             if not case_id:
                 return JsonResponse({"error": "No se obtuvo caseId"}, status=500)
 
-        # Esperamos la tarea “Definir plan de trabajo y economico”
-        task = cli.wait_ready_task_in_case(case_id, task_name="Definir plan de trabajo y economico", timeout_sec=30)
+        # Buscar tarea "Definir plan..."
+        task = cli.wait_ready_task_in_case(case_id, task_name="Definir plan de trabajo y economico", timeout_sec=45)
         if not task:
             return JsonResponse(
-                {
-                    "ok": False,
-                    "error": "No apareció la tarea 'Definir plan de trabajo y economico'.",
-                    "detail": "Si es un caso nuevo, el login (conector de entrada) pudo haber fallado.",
-                },
+                {"ok": False, "error": "No apareció la tarea 'Definir plan de trabajo y economico'."},
                 status=409,
             )
 
-        # Asignamos y ejecutamos la tarea con el contrato.
-        # IMPORTANTE: ahora incluimos 'descripcion' además de 'nombre';
-        # 'planTrabajo' y 'planEconomico' siguen viajando como JSON string si los necesitás adentro del proceso.
+        # Asignar y ejecutar tarea
         cli.assign_task(task["id"], user_id)
         payload_contrato = {
             "nombre": str(data.get("nombre") or ""),
@@ -146,3 +148,36 @@ def iniciar_proyecto_api(req: HttpRequest):
 
     except Exception as e:
         return JsonResponse({"error": "Error integrando con Bonita", "detail": str(e)}, status=500)
+
+
+# --------------------------- API: Revisar pedidos ---------------------------
+
+@csrf_exempt
+def revisar_pedidos_api(req: HttpRequest):
+    """
+    Devuelve lo que dejó el conector ON_ENTER de la tarea 'Revisar pedido'
+    en la variable de proceso 'proyectosJson'.
+    """
+    case_id = (req.GET.get("case") or _json(req).get("caseId") or "").strip()
+    if not case_id:
+        return JsonResponse({"error": "Falta caseId/case"}, status=400)
+
+    try:
+        cli = BonitaClient()
+        cli.login()
+
+        var = cli.get_case_variable(case_id, "proyectosJson")
+        if not var or "value" not in var or not (var["value"] or "").strip():
+            return JsonResponse(
+                {"ok": True, "caseId": case_id, "proyectos": [], "mensaje": "No hay proyectos"},
+                status=200,
+            )
+
+        try:
+            proyectos = json.loads(var["value"])
+        except Exception:
+            proyectos = []
+
+        return JsonResponse({"ok": True, "caseId": case_id, "proyectos": proyectos}, status=200)
+    except Exception as e:
+        return JsonResponse({"error": "Error consultando Bonita", "detail": str(e)}, status=500)
