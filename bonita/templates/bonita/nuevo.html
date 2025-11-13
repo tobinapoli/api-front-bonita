@@ -39,11 +39,11 @@
             <div class="row g-3">
               <div class="col-md-6">
                 <label class="form-label">Inicio previsto</label>
-                <input type="date" name="metadata.fechaInicioPrevista" class="form-control" required>
+                <input type="date" id="metaIniInput" name="metadata.fechaInicioPrevista" class="form-control" required>
               </div>
               <div class="col-md-6">
                 <label class="form-label">Fin previsto</label>
-                <input type="date" name="metadata.fechaFinPrevista" class="form-control" required>
+                <input type="date" id="metaFinInput" name="metadata.fechaFinPrevista" class="form-control" required>
               </div>
             </div>
           </fieldset>
@@ -57,11 +57,11 @@
               </div>
               <div class="col-md-3">
                 <label class="form-label">Inicio</label>
-                <input type="date" name="planTrabajo.etapas[0].fechaInicioPrevista" class="form-control" required>
+                <input type="date" id="etapaIniInput" name="planTrabajo.etapas[0].fechaInicioPrevista" class="form-control" required>
               </div>
               <div class="col-md-3">
                 <label class="form-label">Fin</label>
-                <input type="date" name="planTrabajo.etapas[0].fechaFinPrevista" class="form-control" required>
+                <input type="date" id="etapaFinInput" name="planTrabajo.etapas[0].fechaFinPrevista" class="form-control" required>
               </div>
             </div>
           </fieldset>
@@ -71,15 +71,34 @@
             <div class="row g-3">
               <div class="col-md-3">
                 <label class="form-label">Moneda base</label>
-                <input type="text" name="planEconomico.monedaBase" class="form-control" required>
+                <select name="planEconomico.monedaBase" class="form-select" required>
+                  <option value="">-- Seleccionar --</option>
+                  <option value="ARS">ARS (Peso Argentino)</option>
+                  <option value="USD">USD (Dólar Estadounidense)</option>
+                  <option value="EUR">EUR (Euro)</option>
+                  <option value="BRL">BRL (Real Brasileño)</option>
+                  <option value="UYU">UYU (Peso Uruguayo)</option>
+                  <option value="CLP">CLP (Peso Chileno)</option>
+                </select>
               </div>
               <div class="col-md-5">
                 <label class="form-label">Rubro</label>
-                <input type="text" name="planEconomico.presupuestoPorRubro[0].rubro" class="form-control" required>
+                <select name="planEconomico.presupuestoPorRubro[0].rubro" class="form-select" required>
+                  <option value="">-- Seleccionar --</option>
+                  <option value="Desarrollo">Desarrollo</option>
+                  <option value="Testing">Testing</option>
+                  <option value="Gestión">Gestión</option>
+                  <option value="Infraestructura">Infraestructura</option>
+                  <option value="Diseño">Diseño</option>
+                  <option value="Documentación">Documentación</option>
+                  <option value="Capacitación">Capacitación</option>
+                  <option value="Soporte">Soporte</option>
+                  <option value="Otro">Otro</option>
+                </select>
               </div>
               <div class="col-md-4">
                 <label class="form-label">Monto</label>
-                <input type="number" step="0.01" name="planEconomico.presupuestoPorRubro[0].monto" class="form-control" required>
+                <input type="number" step="0.01" min="0" name="planEconomico.presupuestoPorRubro[0].monto" class="form-control" required>
               </div>
             </div>
           </fieldset>
@@ -95,11 +114,229 @@
   </div>
 
   <script>
+    const VALID_CURRENCIES = ["ARS", "USD", "EUR", "BRL", "UYU", "CLP"];
+    const VALID_RUBROS = ["Desarrollo", "Testing", "Gestión", "Infraestructura", "Diseño", "Documentación", "Capacitación", "Soporte", "Otro"];
+
     function qp(name){ return new URLSearchParams(location.search).get(name); }
+
+    function formatDateISO(date) {
+      return date.toISOString().split('T')[0];
+    }
+
+    function initializeDateRestrictions() {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const todayISO = formatDateISO(today);
+
+      const metaIniInput = document.getElementById("metaIniInput");
+      const metaFinInput = document.getElementById("metaFinInput");
+      const etapaIniInput = document.getElementById("etapaIniInput");
+      const etapaFinInput = document.getElementById("etapaFinInput");
+
+      // Metadata: inicio mínimo = hoy
+      metaIniInput.min = todayISO;
+
+      // Metadata: fin mínimo = hoy
+      metaFinInput.min = todayISO;
+
+      // Cuando cambia metaIni, actualizar restricciones
+      metaIniInput.addEventListener("change", () => {
+        const metaIniVal = metaIniInput.value;
+        if (metaIniVal) {
+          // Fin debe ser >= inicio
+          metaFinInput.min = metaIniVal;
+          // Etapa inicio debe ser >= metaInicio
+          etapaIniInput.min = metaIniVal;
+        }
+      });
+
+      // Cuando cambia metaFin, actualizar restricciones
+      metaFinInput.addEventListener("change", () => {
+        const metaFinVal = metaFinInput.value;
+        if (metaFinVal) {
+          // Etapa fin debe ser <= metaFin
+          etapaFinInput.max = metaFinVal;
+        }
+      });
+
+      // Cuando cambia etapaIni, actualizar restricciones
+      etapaIniInput.addEventListener("change", () => {
+        const etapaIniVal = etapaIniInput.value;
+        if (etapaIniVal) {
+          // Fin de etapa debe ser >= inicio de etapa
+          etapaFinInput.min = etapaIniVal;
+        }
+      });
+
+      // Cuando cambia metaIni nuevamente, limitar etapaIni
+      metaIniInput.addEventListener("change", () => {
+        const metaIniVal = metaIniInput.value;
+        if (metaIniVal) {
+          etapaIniInput.min = metaIniVal;
+          // Resetear etapaIni si está fuera del rango
+          if (etapaIniInput.value && etapaIniInput.value < metaIniVal) {
+            etapaIniInput.value = "";
+            etapaFinInput.value = "";
+          }
+        }
+      });
+
+      // Cuando cambia metaFin nuevamente, limitar etapaFin
+      metaFinInput.addEventListener("change", () => {
+        const metaFinVal = metaFinInput.value;
+        if (metaFinVal) {
+          etapaFinInput.max = metaFinVal;
+          // Resetear etapaFin si está fuera del rango
+          if (etapaFinInput.value && etapaFinInput.value > metaFinVal) {
+            etapaFinInput.value = "";
+          }
+        }
+      });
+    }
+
+    function validateClientForm(form) {
+      const errors = [];
+
+      // Nombre
+      const nombre = (form["nombre"].value || "").trim();
+      if (!nombre) errors.push({ path: "nombre", msg: "Requerido." });
+
+      // Fechas de metadata
+      const metaIni = form["metadata.fechaInicioPrevista"].value;
+      const metaFin = form["metadata.fechaFinPrevista"].value;
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
+      if (!metaIni) {
+        errors.push({ path: "metadata.fechaInicioPrevista", msg: "Requerido." });
+      } else {
+        const d = new Date(metaIni + "T00:00:00");
+        if (d < today) {
+          errors.push({ path: "metadata.fechaInicioPrevista", msg: "No puede ser anterior a hoy." });
+        }
+      }
+
+      if (!metaFin) {
+        errors.push({ path: "metadata.fechaFinPrevista", msg: "Requerido." });
+      } else {
+        const d = new Date(metaFin + "T00:00:00");
+        if (d < today) {
+          errors.push({ path: "metadata.fechaFinPrevista", msg: "No puede ser anterior a hoy." });
+        }
+      }
+
+      // Validar fin >= inicio
+      if (metaIni && metaFin) {
+        const dIni = new Date(metaIni + "T00:00:00");
+        const dFin = new Date(metaFin + "T00:00:00");
+        if (dFin < dIni) {
+          errors.push({ path: "metadata.fechaFinPrevista", msg: "Debe ser >= fechaInicioPrevista." });
+        }
+      }
+
+      // Etapa
+      const etapaNombre = (form["planTrabajo.etapas[0].nombre"].value || "").trim();
+      if (!etapaNombre) {
+        errors.push({ path: "planTrabajo.etapas[0].nombre", msg: "Requerido." });
+      }
+
+      const etapaIni = form["planTrabajo.etapas[0].fechaInicioPrevista"].value;
+      const etapaFin = form["planTrabajo.etapas[0].fechaFinPrevista"].value;
+
+      if (!etapaIni) {
+        errors.push({ path: "planTrabajo.etapas[0].fechaInicioPrevista", msg: "Requerido." });
+      } else {
+        const d = new Date(etapaIni + "T00:00:00");
+        if (d < today) {
+          errors.push({ path: "planTrabajo.etapas[0].fechaInicioPrevista", msg: "No puede ser anterior a hoy." });
+        }
+        if (metaIni) {
+          const dMeta = new Date(metaIni + "T00:00:00");
+          if (d < dMeta) {
+            errors.push({ path: "planTrabajo.etapas[0].fechaInicioPrevista", msg: "No puede ser anterior al inicio del proyecto." });
+          }
+        }
+      }
+
+      if (!etapaFin) {
+        errors.push({ path: "planTrabajo.etapas[0].fechaFinPrevista", msg: "Requerido." });
+      } else {
+        const d = new Date(etapaFin + "T00:00:00");
+        if (d < today) {
+          errors.push({ path: "planTrabajo.etapas[0].fechaFinPrevista", msg: "No puede ser anterior a hoy." });
+        }
+        if (metaFin) {
+          const dMeta = new Date(metaFin + "T00:00:00");
+          if (d > dMeta) {
+            errors.push({ path: "planTrabajo.etapas[0].fechaFinPrevista", msg: "No puede superar el fin del proyecto." });
+          }
+        }
+      }
+
+      // Validar fin >= inicio en etapa
+      if (etapaIni && etapaFin) {
+        const dIni = new Date(etapaIni + "T00:00:00");
+        const dFin = new Date(etapaFin + "T00:00:00");
+        if (dFin < dIni) {
+          errors.push({ path: "planTrabajo.etapas[0].fechaFinPrevista", msg: "Debe ser >= fechaInicioPrevista." });
+        }
+      }
+
+      // Moneda
+      const moneda = form["planEconomico.monedaBase"].value;
+      if (!moneda) {
+        errors.push({ path: "planEconomico.monedaBase", msg: "Requerido." });
+      } else if (!VALID_CURRENCIES.includes(moneda)) {
+        errors.push({ path: "planEconomico.monedaBase", msg: `Debe ser uno de: ${VALID_CURRENCIES.join(", ")}` });
+      }
+
+      // Rubro
+      const rubro = form["planEconomico.presupuestoPorRubro[0].rubro"].value;
+      if (!rubro) {
+        errors.push({ path: "planEconomico.presupuestoPorRubro[0].rubro", msg: "Requerido." });
+      } else if (!VALID_RUBROS.includes(rubro)) {
+        errors.push({ path: "planEconomico.presupuestoPorRubro[0].rubro", msg: `Debe ser uno de: ${VALID_RUBROS.join(", ")}` });
+      }
+
+      // Monto
+      const montoStr = form["planEconomico.presupuestoPorRubro[0].monto"].value;
+      if (!montoStr) {
+        errors.push({ path: "planEconomico.presupuestoPorRubro[0].monto", msg: "Requerido." });
+      } else {
+        const monto = parseFloat(montoStr);
+        if (isNaN(monto)) {
+          errors.push({ path: "planEconomico.presupuestoPorRubro[0].monto", msg: "Debe ser un número." });
+        } else if (monto < 0) {
+          errors.push({ path: "planEconomico.presupuestoPorRubro[0].monto", msg: "No puede ser negativo." });
+        }
+      }
+
+      return errors;
+    }
+
+    function displayErrors(errors) {
+      const html = `
+        <div class="alert alert-danger mt-3">
+          <strong>Errores de validación:</strong>
+          <ul class="mb-0 mt-2">
+            ${errors.map(e => `<li><code>${e.path}</code>: ${e.msg}</li>`).join("")}
+          </ul>
+        </div>
+      `;
+      document.getElementById("resultado").innerHTML = html;
+    }
 
     document.getElementById("proyectoForm").addEventListener("submit", async (e) => {
       e.preventDefault();
       const form = e.target;
+
+      // Validar en cliente
+      const clientErrors = validateClientForm(form);
+      if (clientErrors.length > 0) {
+        displayErrors(clientErrors);
+        return;
+      }
+
       const data = {
         caseId: qp("case"),
         nombre: form["nombre"].value,
@@ -130,9 +367,19 @@
         body: JSON.stringify(data)
       });
       const json = await res.json();
-      document.getElementById("resultado").innerHTML =
-        `<pre class="bg-light border p-3 mt-3">${JSON.stringify(json, null, 2)}</pre>`;
+      
+      // Si hay errores, mostrarlos
+      if (!res.ok || (json.errors && json.errors.length > 0)) {
+        const errors = json.errors || [{ path: "general", msg: json.error || "Error desconocido" }];
+        displayErrors(errors);
+      } else {
+        document.getElementById("resultado").innerHTML =
+          `<pre class="bg-light border p-3 mt-3">${JSON.stringify(json, null, 2)}</pre>`;
+      }
     });
+
+    // Inicializar restricciones de fechas cuando carga la página
+    document.addEventListener("DOMContentLoaded", initializeDateRestrictions);
   </script>
 </body>
 </html>
