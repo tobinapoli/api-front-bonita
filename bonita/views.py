@@ -28,7 +28,7 @@ def nuevo_proyecto_page(req: HttpRequest):
     return render(req, "bonita/nuevo.html")
 
 
-def revisar_pedidos_page(req: HttpRequest):
+def revisar_proyectos_page(req: HttpRequest):
     return render(req, "bonita/revisar.html")
 
 
@@ -342,12 +342,12 @@ def registrar_pedido_api(req: HttpRequest):
         return JsonResponse({"ok": False, "error": "Error integrando con Bonita", "detail": str(e)}, status=500)
 
 
-# --------------------------- API: Revisar pedidos ---------------------------
+# --------------------------- API: Revisar proyectos ---------------------------
 
 @csrf_exempt
-def revisar_pedidos_api(req: HttpRequest):
+def revisar_proyectos_api(req: HttpRequest):
     """
-    Devuelve lo que dejó el conector ON_ENTER de la tarea 'Revisar pedido'
+    Devuelve lo que dejó el conector ON_ENTER de la tarea 'Revisar proyecto'
     en la variable de proceso 'proyectosJson'.
     """
     case_id = (req.GET.get("case") or _json(req).get("caseId") or "").strip()
