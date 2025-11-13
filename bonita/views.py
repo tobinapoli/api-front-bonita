@@ -7,6 +7,7 @@ from django.shortcuts import render
 from django.views.decorators.csrf import csrf_exempt
 from .bonita_client import BonitaClient
 from .validators import validate_iniciar_payload
+import time
 
 
 # --------------------------- Páginas HTML ---------------------------
@@ -29,6 +30,16 @@ def nuevo_proyecto_page(req: HttpRequest):
 
 def revisar_pedidos_page(req: HttpRequest):
     return render(req, "bonita/revisar.html")
+
+
+def pedido_page(req: HttpRequest):
+    """
+    Página para registrar un pedido asociado a un proyecto ya creado.
+    Espera en la URL:
+      - ?case=<caseId de Bonita>
+      - ?proyecto=<id del proyecto en la API cloud>
+    """
+    return render(req, "bonita/pedido.html")
 
 
 # --------------------------- Helpers ---------------------------
@@ -76,8 +87,7 @@ def login_api(req: HttpRequest):
         if not case_id:
             return JsonResponse({"ok": False, "error": "No se obtuvo caseId"}, status=500)
 
-        # 🔹 Antes se esperaba la tarea "Definir plan...", ahora devolvemos directamente
-        #    el caseId para evitar bloqueos o timeouts en Bonita.
+        # Devolvemos directamente el caseId
         return JsonResponse({"ok": True, "caseId": case_id}, status=200)
 
     except Exception as e:
@@ -89,11 +99,15 @@ def login_api(req: HttpRequest):
 
 # --------------------------- API: Iniciar proyecto ---------------------------
 
+# --------------------------- API: Iniciar proyecto ---------------------------
+
 @csrf_exempt
 def iniciar_proyecto_api(req: HttpRequest):
     """
     Empuja el contrato de 'Definir plan de trabajo y económico'.
     Si no existe un caseId válido, instancia el proceso.
+    Luego espera a que Bonita complete el conector que crea el proyecto
+    y devuelve el ID de proyecto al frontend.
     """
     if req.method != "POST":
         return JsonResponse({"error": "POST only"}, status=405)
@@ -127,6 +141,7 @@ def iniciar_proyecto_api(req: HttpRequest):
             )
             if not proc_id:
                 return JsonResponse({"error": "No se encontró ProjectPlanning 1.0"}, status=500)
+
             api_user = str(data.get("apiUser") or data.get("username") or "").strip()
             api_pass = str(data.get("apiPass") or data.get("password") or "").strip()
             inst = cli.instantiate_process(proc_id, {"apiUser": api_user, "apiPass": api_pass})
@@ -135,7 +150,11 @@ def iniciar_proyecto_api(req: HttpRequest):
                 return JsonResponse({"error": "No se obtuvo caseId"}, status=500)
 
         # Buscar tarea "Definir plan..."
-        task = cli.wait_ready_task_in_case(case_id, task_name="Definir plan de trabajo y economico", timeout_sec=45)
+        task = cli.wait_ready_task_in_case(
+            case_id,
+            task_name="Definir plan de trabajo y economico",
+            timeout_sec=45,
+        )
         if not task:
             return JsonResponse(
                 {"ok": False, "error": "No apareció la tarea 'Definir plan de trabajo y economico'."},
@@ -152,10 +171,175 @@ def iniciar_proyecto_api(req: HttpRequest):
         }
         cli.execute_task(task["id"], payload_contrato)
 
-        return JsonResponse({"ok": True, "caseId": case_id, "avanzado": True}, status=201)
+        # ---------- Esperar a que el conector cree el proyecto ----------
+        proyecto_id = None
+        raw_body_proyecto = None
+
+        deadline = time.time() + 10  # hasta 10 segundos
+        last_raw_pid = None
+
+        while time.time() < deadline and proyecto_id is None:
+            # 1) Intento directo: variable proyectoId
+            var_pid = cli.get_case_variable(case_id, "proyectoId")
+            if var_pid and "value" in var_pid:
+                v = (var_pid["value"] or "").strip()
+                last_raw_pid = v
+                if v and v.lower() != "null":
+                    try:
+                        proyecto_id = int(v)
+                    except ValueError:
+                        proyecto_id = v
+                    break
+
+            time.sleep(0.4)
+
+        # 2) Si sigue en None, probar leyendo body_proyecto y parseando JSON
+        var_proy = cli.get_case_variable(case_id, "body_proyecto")
+        if var_proy and "value" in var_proy:
+            raw_body_proyecto = (var_proy["value"] or "").strip()
+            if proyecto_id is None and raw_body_proyecto and raw_body_proyecto.lower() != "null":
+                try:
+                    obj = json.loads(raw_body_proyecto)
+                except Exception:
+                    obj = None
+
+                if isinstance(obj, str):
+                    try:
+                        obj2 = json.loads(obj)
+                        obj = obj2
+                    except Exception:
+                        pass
+
+                if isinstance(obj, dict):
+                    proyecto_id = (
+                        obj.get("id")
+                        or obj.get("proyectoId")
+                        or obj.get("id_proyecto")
+                    )
+
+        return JsonResponse(
+            {
+                "ok": True,
+                "caseId": case_id,
+                "avanzado": True,
+                "proyectoId": proyecto_id,
+                "rawBodyProyecto": raw_body_proyecto,
+            },
+            status=201,
+        )
 
     except Exception as e:
-        return JsonResponse({"error": "Error integrando con Bonita", "detail": str(e)}, status=500)
+        return JsonResponse(
+            {"error": "Error integrando con Bonita", "detail": str(e)},
+            status=500,
+        )
+
+
+# --------------------------- API: Registrar pedido ---------------------------
+
+@csrf_exempt
+def registrar_pedido_api(req: HttpRequest):
+    """
+    Completa la tarea 'Registrar pedido' en Bonita.
+
+    Espera un JSON:
+      {
+        "caseId": "...",
+        "pedidoTipo": "...",
+        "pedidoDetalle": "..."
+      }
+
+    El conector de salida de esa tarea se encarga de hablar con la API JWT
+    para crear el pedido en el proyecto correspondiente.
+    """
+    if req.method != "POST":
+        return JsonResponse({"error": "POST only"}, status=405)
+
+    data = _json(req)
+    case_id = str(data.get("caseId") or "").strip()
+    pedido_tipo = str(data.get("pedidoTipo") or "").strip()
+    pedido_detalle = str(data.get("pedidoDetalle") or "").strip()
+
+    if not case_id:
+        return JsonResponse({"ok": False, "error": "Falta caseId"}, status=400)
+    if not pedido_tipo:
+        return JsonResponse({"ok": False, "error": "Falta pedidoTipo"}, status=400)
+    if not pedido_detalle:
+        return JsonResponse({"ok": False, "error": "Falta pedidoDetalle"}, status=400)
+
+    try:
+        cli = BonitaClient()
+        cli.login()
+
+        assignee_username = getattr(settings, "BONITA_ASSIGNEE", "walter.bates")
+        user_id = cli.get_user_id_by_username(assignee_username)
+        if not user_id:
+            return JsonResponse(
+                {"ok": False, "error": "Usuario Bonita no encontrado", "detail": assignee_username},
+                status=500,
+            )
+
+        # Buscar tarea "Registrar pedido"
+        task = cli.wait_ready_task_in_case(case_id, task_name="Registrar pedido", timeout_sec=45)
+        if not task:
+            return JsonResponse(
+                {"ok": False, "error": "No apareció la tarea 'Registrar pedido'."},
+                status=409,
+            )
+
+        # Asignar y ejecutar tarea con el contrato
+        cli.assign_task(task["id"], user_id)
+        payload_contrato = {
+            "pedidoTipo": pedido_tipo,
+            "pedidoDetalle": pedido_detalle,
+        }
+        cli.execute_task(task["id"], payload_contrato)
+
+        # Leer variables que deja el conector REST de salida
+        pedido_id = None
+        status_code_pedido = None
+        body_pedido_json = None
+        body_pedido_raw = None
+
+        var_id = cli.get_case_variable(case_id, "pedidoId")
+        if var_id and "value" in var_id:
+            v = var_id["value"]
+            try:
+                pedido_id = int(v)
+            except Exception:
+                pedido_id = v
+
+        var_status = cli.get_case_variable(case_id, "status_code_pedido")
+        if var_status and "value" in var_status:
+            v = var_status["value"]
+            try:
+                status_code_pedido = int(v)
+            except Exception:
+                status_code_pedido = v
+
+        var_body = cli.get_case_variable(case_id, "body_pedido")
+        if var_body and "value" in var_body and (var_body["value"] or "").strip():
+            body_pedido_raw = var_body["value"]
+            try:
+                body_pedido_json = json.loads(body_pedido_raw)
+            except Exception:
+                body_pedido_json = None
+
+        resp: Dict[str, Any] = {
+            "ok": True,
+            "caseId": case_id,
+            "pedidoId": pedido_id,
+            "statusCode": status_code_pedido,
+        }
+        if body_pedido_json is not None:
+            resp["pedido"] = body_pedido_json
+        elif body_pedido_raw is not None:
+            resp["pedidoRaw"] = body_pedido_raw
+
+        return JsonResponse(resp, status=201)
+
+    except Exception as e:
+        return JsonResponse({"ok": False, "error": "Error integrando con Bonita", "detail": str(e)}, status=500)
 
 
 # --------------------------- API: Revisar pedidos ---------------------------

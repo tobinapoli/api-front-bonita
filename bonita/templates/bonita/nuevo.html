@@ -372,7 +372,12 @@
       if (!res.ok || (json.errors && json.errors.length > 0)) {
         const errors = json.errors || [{ path: "general", msg: json.error || "Error desconocido" }];
         displayErrors(errors);
+      } else if (json.ok && json.caseId && json.proyectoId) {
+        // 🔹 Redirigir automáticamente a la pantalla de registrar pedido
+        const url = `/bonita/pedido/?case=${encodeURIComponent(json.caseId)}&proyecto=${encodeURIComponent(json.proyectoId)}`;
+        location.href = url;
       } else {
+        // Fallback: mostrar respuesta si por algún motivo no vino proyectoId
         document.getElementById("resultado").innerHTML =
           `<pre class="bg-light border p-3 mt-3">${JSON.stringify(json, null, 2)}</pre>`;
       }
@@ -383,3 +388,4 @@
   </script>
 </body>
 </html>
+  
