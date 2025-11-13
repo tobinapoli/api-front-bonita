@@ -11,6 +11,14 @@ from .validators import validate_iniciar_payload
 
 # --------------------------- Páginas HTML ---------------------------
 
+def index_page(req: HttpRequest):
+    return render(req, "bonita/index.html")
+
+
+def home_page(req: HttpRequest):
+    return render(req, "bonita/home.html")
+
+
 def login_page(req: HttpRequest):
     return render(req, "bonita/login.html")
 
