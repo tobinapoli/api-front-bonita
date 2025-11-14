@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Revisar pedidos (Bonita)</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body class="bg-light">
+
+<nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+  <div class="container">
+    <a class="navbar-brand" href="/bonita/login/">ProjectPlanning</a>
+    <div class="ms-auto d-flex gap-2">
+      <button id="btnVolverProyectos" class="btn btn-outline-light btn-sm">
+        Volver a proyectos
+      </button>
+    </div>
+  </div>
+</nav>
+
+<div class="container py-4" style="max-width:900px">
+  <div class="card shadow-sm">
+    <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+      <h4 class="mb-0">Revisar pedidos</h4>
+      <button id="btnCargar" class="btn btn-light btn-sm">Cargar desde Bonita</button>
+    </div>
+    <div class="card-body">
+      <div class="alert alert-info mb-3">
+        Caso: <code id="caseOut">{{ request.GET.case }}</code>
+        {% if request.GET.proyecto %}
+          <span class="ms-3">Proyecto: <code id="proyectoOut">{{ request.GET.proyecto }}</code></span>
+        {% endif %}
+      </div>
+      <div id="panel"></div>
+      <div id="msg" class="mt-3"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+  function qp(n) {
+    return new URLSearchParams(location.search).get(n);
+  }
+
+  async function cargarPedidos() {
+    const caseId = qp("case");
+    if (!caseId) {
+      document.getElementById("panel").innerHTML =
+        `<div class="alert alert-warning">No se recibió <b>case</b> en la URL.</div>`;
+      return;
+    }
+
+    const res = await fetch(`/api/bonita/revisar-pedidos/?case=${encodeURIComponent(caseId)}`);
+    let j;
+    try {
+      j = await res.json();
+    } catch (e) {
+      document.getElementById("panel").innerHTML =
+        `<div class="alert alert-danger">Respuesta inválida del servidor.</div>`;
+      return;
+    }
+
+    if (!res.ok || j.error) {
+      document.getElementById("panel").innerHTML =
+        `<div class="alert alert-danger">Error: ${j.error || res.status}</div>`;
+      return;
+    }
+
+    const arr = j.pedidos || [];
+    if (arr.length === 0) {
+      document.getElementById("panel").innerHTML =
+        `<div class="alert alert-secondary">No hay pedidos disponibles para este proyecto.</div>`;
+      return;
+    }
+
+    const html = arr.map(p => {
+      const creado = p.creado_en || "";
+      const tipo = p.tipo || "";
+      const estado = p.estado || "";
+      const detalle = p.detalle || "";
+
+      return `
+        <div class="border rounded p-3 mb-2">
+          <div class="d-flex justify-content-between">
+            <div>
+              <h5 class="mb-1">Pedido #${p.id ?? "-"}</h5>
+              <div class="text-muted small">
+                Tipo: <strong>${tipo}</strong> · Estado: <strong>${estado}</strong>
+                ${creado ? ` · Creado: ${creado}` : ""}
+              </div>
+            </div>
+            <button class="btn btn-sm btn-outline-primary" disabled>
+              Colaborar
+            </button>
+          </div>
+          ${detalle ? `<p class="mt-2 mb-0">${detalle}</p>` : ""}
+        </div>
+      `;
+    }).join("");
+
+    document.getElementById("panel").innerHTML = html;
+  }
+
+  async function finalizarRevisionYVolver() {
+    const caseId = qp("case");
+    if (!caseId) {
+      location.href = "/bonita/";  // fallback bruto
+      return;
+    }
+
+    const urlProyectos = `/bonita/revisar/?case=${encodeURIComponent(caseId)}`;
+    document.getElementById("msg").innerHTML = "";
+
+    try {
+      const res = await fetch("/api/bonita/revisar-pedidos/finalizar/", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({ caseId, verOtroProyecto: true })
+      });
+
+      let j = {};
+      try { j = await res.json(); } catch (_) {}
+
+      if (!res.ok || j.ok === false) {
+        // Si falla la API, mostramos mensaje pero igual volvemos a proyectos
+        document.getElementById("msg").innerHTML =
+          `<div class="alert alert-warning">No se pudo notificar a Bonita el cambio de proyecto (se vuelve igual a la lista).</div>`;
+      }
+
+    } catch (e) {
+      // Error de red: también volvemos igual
+      document.getElementById("msg").innerHTML =
+        `<div class="alert alert-warning">Error de red al contactar la API. Se vuelve a la lista igual.</div>`;
+    }
+
+    // En todos los casos volvemos a Revisar proyectos para ese case
+    location.href = urlProyectos;
+  }
+
+  document.getElementById("btnCargar").addEventListener("click", cargarPedidos);
+  document.getElementById("btnVolverProyectos").addEventListener("click", finalizarRevisionYVolver);
+
+  cargarPedidos();
+</script>
+</body>
+</html>

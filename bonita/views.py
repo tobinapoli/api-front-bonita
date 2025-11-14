@@ -1,13 +1,15 @@
 from __future__ import annotations
 import json
+import time
 from typing import Any, Dict
+
 from django.conf import settings
 from django.http import JsonResponse, HttpRequest
 from django.shortcuts import render
 from django.views.decorators.csrf import csrf_exempt
+
 from .bonita_client import BonitaClient
 from .validators import validate_iniciar_payload
-import time
 
 
 # --------------------------- Páginas HTML ---------------------------
@@ -40,6 +42,17 @@ def pedido_page(req: HttpRequest):
       - ?proyecto=<id del proyecto en la API cloud>
     """
     return render(req, "bonita/pedido.html")
+
+
+def revisar_pedidos_proyecto_page(req: HttpRequest):
+    """
+    Página para que la Red de ONGs vea los pedidos de un proyecto concreto.
+
+    Espera en la URL:
+      - ?case=<caseId de Bonita>
+      - ?proyecto=<id del proyecto en la API cloud> (solo para mostrar)
+    """
+    return render(req, "bonita/ver_pedidos.html")
 
 
 # --------------------------- Helpers ---------------------------
@@ -79,7 +92,10 @@ def login_api(req: HttpRequest):
             getattr(settings, "BONITA_PROCESS_VERSION", "1.0"),
         )
         if not proc_id:
-            return JsonResponse({"ok": False, "error": "Proceso ProjectPlanning 1.0 no encontrado"}, status=500)
+            return JsonResponse(
+                {"ok": False, "error": "Proceso ProjectPlanning 1.0 no encontrado"},
+                status=500,
+            )
 
         # Instanciar proceso con usuario y password como payload
         inst = cli.instantiate_process(proc_id, {"apiUser": api_user, "apiPass": api_pass})
@@ -96,8 +112,6 @@ def login_api(req: HttpRequest):
             status=500,
         )
 
-
-# --------------------------- API: Iniciar proyecto ---------------------------
 
 # --------------------------- API: Iniciar proyecto ---------------------------
 
@@ -339,7 +353,83 @@ def registrar_pedido_api(req: HttpRequest):
         return JsonResponse(resp, status=201)
 
     except Exception as e:
-        return JsonResponse({"ok": False, "error": "Error integrando con Bonita", "detail": str(e)}, status=500)
+        return JsonResponse(
+            {"ok": False, "error": "Error integrando con Bonita", "detail": str(e)},
+            status=500,
+        )
+
+
+@csrf_exempt
+def elegir_proyecto_api(req: HttpRequest):
+    """
+    Completa la tarea 'Revisar proyectos' seteando proyectoSeleccionadoId.
+
+    Espera JSON:
+      {
+        "caseId": "...",
+        "proyectoId": 11
+      }
+    """
+    if req.method != "POST":
+        return JsonResponse({"error": "POST only"}, status=405)
+
+    data = _json(req)
+    case_id = str(data.get("caseId") or "").strip()
+    proyecto_id = data.get("proyectoId")
+
+    if not case_id:
+        return JsonResponse({"ok": False, "error": "Falta caseId"}, status=400)
+    if proyecto_id in (None, "", []):
+        return JsonResponse({"ok": False, "error": "Falta proyectoId"}, status=400)
+
+    # intentar castear a int si viene como string
+    try:
+        proyecto_id_int = int(proyecto_id)
+    except (TypeError, ValueError):
+        return JsonResponse({"ok": False, "error": "proyectoId debe ser entero"}, status=400)
+
+    try:
+        cli = BonitaClient()
+        cli.login()
+
+        assignee_username = getattr(settings, "BONITA_ASSIGNEE", "walter.bates")
+        user_id = cli.get_user_id_by_username(assignee_username)
+        if not user_id:
+            return JsonResponse(
+                {"ok": False, "error": "Usuario Bonita no encontrado", "detail": assignee_username},
+                status=500,
+            )
+
+        # Buscar la tarea 'Revisar proyectos' en ese caso
+        task = cli.wait_ready_task_in_case(
+            case_id,
+            task_name="Revisar proyectos",
+            timeout_sec=45,
+        )
+        if not task:
+            return JsonResponse(
+                {"ok": False, "error": "No apareció la tarea 'Revisar proyectos'."},
+                status=409,
+            )
+
+        # Asignar y ejecutar con el contrato
+        cli.assign_task(task["id"], user_id)
+        contract_payload = {
+            "proyectoSeleccionadoId": proyecto_id_int,
+        }
+        cli.execute_task(task["id"], contract_payload)
+
+        # A partir de acá, el flujo en Bonita pasa a 'Revisar pedidos'
+        return JsonResponse(
+            {"ok": True, "caseId": case_id, "proyectoId": proyecto_id_int},
+            status=200,
+        )
+
+    except Exception as e:
+        return JsonResponse(
+            {"ok": False, "error": "Error integrando con Bonita", "detail": str(e)},
+            status=500,
+        )
 
 
 # --------------------------- API: Revisar proyectos ---------------------------
@@ -372,4 +462,108 @@ def revisar_proyectos_api(req: HttpRequest):
 
         return JsonResponse({"ok": True, "caseId": case_id, "proyectos": proyectos}, status=200)
     except Exception as e:
-        return JsonResponse({"error": "Error consultando Bonita", "detail": str(e)}, status=500)
+        return JsonResponse(
+            {"error": "Error consultando Bonita", "detail": str(e)},
+            status=500,
+        )
+
+
+# --------------------------- API: Revisar pedidos de un proyecto -------------
+
+
+@csrf_exempt
+def revisar_pedidos_proyecto_api(req: HttpRequest):
+    """
+    Devuelve lo que dejó el conector ON_ENTER de la tarea 'Revisar pedidos'
+    en la variable de proceso 'pedidosJson'.
+    """
+    case_id = (req.GET.get("case") or _json(req).get("caseId") or "").strip()
+    if not case_id:
+        return JsonResponse({"error": "Falta caseId/case"}, status=400)
+
+    try:
+        cli = BonitaClient()
+        cli.login()
+
+        var = cli.get_case_variable(case_id, "pedidosJson")
+        if not var or "value" not in var or not (var["value"] or "").strip():
+            return JsonResponse(
+                {
+                    "ok": True,
+                    "caseId": case_id,
+                    "pedidos": [],
+                    "mensaje": "No hay pedidos",
+                },
+                status=200,
+            )
+
+        try:
+            pedidos = json.loads(var["value"])
+        except Exception:
+            pedidos = []
+
+        return JsonResponse(
+            {"ok": True, "caseId": case_id, "pedidos": pedidos},
+            status=200,
+        )
+    except Exception as e:
+        return JsonResponse(
+            {"error": "Error consultando Bonita", "detail": str(e)},
+            status=500,
+        )
+
+@csrf_exempt
+def finalizar_revision_pedidos_api(req: HttpRequest):
+    """
+    Completa la tarea 'Revisar pedidos' en Bonita seteando verOtroProyecto.
+    Espera JSON:
+      {
+        "caseId": "...",
+        "verOtroProyecto": true/false
+      }
+    """
+    if req.method != "POST":
+        return JsonResponse({"error": "POST only"}, status=405)
+
+    data = _json(req)
+    case_id = str(data.get("caseId") or "").strip()
+    ver_otro = bool(data.get("verOtroProyecto"))
+
+    if not case_id:
+        return JsonResponse({"ok": False, "error": "Falta caseId"}, status=400)
+
+    try:
+        cli = BonitaClient()
+        cli.login()
+
+        assignee_username = getattr(settings, "BONITA_ASSIGNEE", "walter.bates")
+        user_id = cli.get_user_id_by_username(assignee_username)
+        if not user_id:
+            return JsonResponse(
+                {"ok": False, "error": "Usuario Bonita no encontrado", "detail": assignee_username},
+                status=500,
+            )
+
+        # Buscar tarea 'Revisar pedidos'
+        task = cli.wait_ready_task_in_case(
+            case_id,
+            task_name="Revisar pedidos",
+            timeout_sec=45,
+        )
+        if not task:
+            return JsonResponse(
+                {"ok": False, "error": "No apareció la tarea 'Revisar pedidos' para este caso."},
+                status=409,
+            )
+
+        # Asignar y ejecutar con el contrato verOtroProyecto
+        cli.assign_task(task["id"], user_id)
+        cli.execute_task(task["id"], {"verOtroProyecto": ver_otro})
+
+        return JsonResponse({"ok": True, "caseId": case_id, "verOtroProyecto": ver_otro}, status=200)
+
+    except Exception as e:
+        return JsonResponse(
+            {"ok": False, "error": "Error integrando con Bonita", "detail": str(e)},
+            status=500,
+        )

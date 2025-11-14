@@ -12,7 +12,10 @@
   <div class="container">
     <a class="navbar-brand" href="/bonita/login/">ProjectPlanning</a>
     <div class="ms-auto">
-      <a class="btn btn-outline-light btn-sm" href="/bonita/nuevo/?case={{ request.GET.case|default_if_none:'' }}">Nuevo proyecto</a>
+      <a class="btn btn-outline-light btn-sm"
+         href="/bonita/nuevo/?case={{ request.GET.case|default_if_none:'' }}">
+        Nuevo proyecto
+      </a>
     </div>
   </div>
 </nav>
@@ -28,6 +31,7 @@
         Caso: <code id="caseOut">{{ request.GET.case }}</code>
       </div>
       <div id="panel"></div>
+      <div id="msg" class="mt-3"></div>
     </div>
   </div>
 </div>
@@ -52,7 +56,7 @@
     const arr = j.proyectos || [];
     if (arr.length === 0) {
       document.getElementById("panel").innerHTML =
-        `<div class="alert alert-secondary">No hay proyectos/pedidos disponibles.</div>`;
+        `<div class="alert alert-secondary">No hay proyectos disponibles.</div>`;
       return;
     }
     const html = arr.map(p => `
@@ -62,7 +66,10 @@
             <h5 class="mb-1">${p.nombre || 'Proyecto'}</h5>
             <div class="text-muted small">ID: ${p.id ?? '-'}</div>
           </div>
-          <button class="btn btn-sm btn-outline-primary" disabled>Colaborar</button>
+          <button class="btn btn-sm btn-outline-primary"
+                  onclick="colaborar(${p.id})">
+            Ver pedidos
+          </button>
         </div>
         ${p.descripcion ? `<p class="mt-2 mb-0">${p.descripcion}</p>` : ""}
       </div>
@@ -70,8 +77,34 @@
     document.getElementById("panel").innerHTML = html;
   }
 
+  async function colaborar(proyectoId) {
+    const caseId = qp("case");
+    if (!caseId) {
+      document.getElementById("msg").innerHTML =
+        `<div class="alert alert-warning">No se encontró caseId en la URL.</div>`;
+      return;
+    }
+    document.getElementById("msg").innerHTML = "";
+
+    const res = await fetch("/api/bonita/elegir-proyecto/", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({ caseId, proyectoId })
+    });
+
+    const j = await res.json();
+    if (!res.ok || !j.ok) {
+      document.getElementById("msg").innerHTML =
+        `<div class="alert alert-danger">Error al seleccionar proyecto: ${j.error || res.status}</div>`;
+      return;
+    }
+
+    // Sigue funcionando igual: se pasa a 'Revisar pedidos' y vamos a la pantalla de pedidos
+    const url = `/bonita/ver-pedidos/?case=${encodeURIComponent(caseId)}&proyecto=${encodeURIComponent(proyectoId)}`;
+    location.href = url;
+  }
+
   document.getElementById("btnCargar").addEventListener("click", cargar);
-  // opcional: cargar automáticamente
   cargar();
 </script>
 </body>
