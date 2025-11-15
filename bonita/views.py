@@ -55,6 +55,16 @@ def revisar_pedidos_proyecto_page(req: HttpRequest):
     return render(req, "bonita/ver_pedidos.html")
 
 
+def compromiso_page(req: HttpRequest):
+    """
+    Página para registrar un compromiso asociado a un pedido.
+    Espera en la URL:
+      - ?case=<caseId>
+      - ?proyecto=<id del proyecto>
+      - ?pedido=<id del pedido>
+    """
+    return render(req, "bonita/compromiso.html")
+
 # --------------------------- Helpers ---------------------------
 
 def _json(req: HttpRequest) -> Dict[str, Any]:
@@ -561,6 +571,131 @@ def finalizar_revision_pedidos_api(req: HttpRequest):
         cli.execute_task(task["id"], {"verOtroProyecto": ver_otro})
 
         return JsonResponse({"ok": True, "caseId": case_id, "verOtroProyecto": ver_otro}, status=200)
+
+    except Exception as e:
+        return JsonResponse(
+            {"ok": False, "error": "Error integrando con Bonita", "detail": str(e)},
+            status=500,
+        )
+
+
+# bonita/views.py (agregar al final junto al resto de APIs)
+
+@csrf_exempt
+def registrar_compromiso_api(req: HttpRequest):
+    """
+    Completa la tarea 'Registrar compromiso' en Bonita.
+
+    Espera un JSON:
+      {
+        "caseId": "...",
+        "pedidoId": 6,
+        "compromisoTipo": "...",
+        "compromisoDetalle": "..."
+      }
+
+    El conector de salida de esa tarea se encarga de hablar con la API JWT
+    para crear el compromiso asociado al pedido correspondiente.
+    """
+    if req.method != "POST":
+        return JsonResponse({"error": "POST only"}, status=405)
+
+    data = _json(req)
+    case_id     = str(data.get("caseId") or "").strip()
+    comp_tipo   = str(data.get("compromisoTipo") or "").strip()
+    comp_detalle = str(data.get("compromisoDetalle") or "").strip()
+    pedido_raw  = data.get("pedidoId")
+
+    if not case_id:
+        return JsonResponse({"ok": False, "error": "Falta caseId"}, status=400)
+    if not comp_tipo:
+        return JsonResponse({"ok": False, "error": "Falta compromisoTipo"}, status=400)
+    if not comp_detalle:
+        return JsonResponse({"ok": False, "error": "Falta compromisoDetalle"}, status=400)
+    if pedido_raw in (None, "", []):
+        return JsonResponse({"ok": False, "error": "Falta pedidoId"}, status=400)
+
+    try:
+        pedido_id = int(pedido_raw)
+    except (TypeError, ValueError):
+        return JsonResponse({"ok": False, "error": "pedidoId debe ser entero"}, status=400)
+
+    try:
+        cli = BonitaClient()
+        cli.login()
+
+        assignee_username = getattr(settings, "BONITA_ASSIGNEE", "walter.bates")
+        user_id = cli.get_user_id_by_username(assignee_username)
+        if not user_id:
+            return JsonResponse(
+                {"ok": False, "error": "Usuario Bonita no encontrado", "detail": assignee_username},
+                status=500,
+            )
+
+        # Buscar tarea "Registrar compromiso"
+        task = cli.wait_ready_task_in_case(
+            case_id,
+            task_name="Registrar compromiso",
+            timeout_sec=45,
+        )
+        if not task:
+            return JsonResponse(
+                {"ok": False, "error": "No apareció la tarea 'Registrar compromiso'."},
+                status=409,
+            )
+
+        # Asignar y ejecutar con el contrato
+        cli.assign_task(task["id"], user_id)
+        payload_contrato = {
+            "compromisoTipo": comp_tipo,
+            "compromisoDetalle": comp_detalle,
+            "pedidoId": pedido_id,
+        }
+        cli.execute_task(task["id"], payload_contrato)
+
+        # Opcional: leer lo que dejó el conector de salida
+        compromiso_id = None
+        status_code_comp = None
+        body_comp_json = None
+        body_comp_raw = None
+
+        var_id = cli.get_case_variable(case_id, "compromisoId")
+        if var_id and "value" in var_id:
+            v = var_id["value"]
+            try:
+                compromiso_id = int(v)
+            except Exception:
+                compromiso_id = v
+
+        var_status = cli.get_case_variable(case_id, "status_code_compromiso")
+        if var_status and "value" in var_status:
+            v = var_status["value"]
+            try:
+                status_code_comp = int(v)
+            except Exception:
+                status_code_comp = v
+
+        var_body = cli.get_case_variable(case_id, "body_compromiso")
+        if var_body and "value" in var_body and (var_body["value"] or "").strip():
+            body_comp_raw = var_body["value"]
+            try:
+                body_comp_json = json.loads(body_comp_raw)
+            except Exception:
+                body_comp_json = None
+
+        resp: Dict[str, Any] = {
+            "ok": True,
+            "caseId": case_id,
+            "pedidoId": pedido_id,
+            "compromisoId": compromiso_id,
+            "statusCode": status_code_comp,
+        }
+        if body_comp_json is not None:
+            resp["compromiso"] = body_comp_json
+        elif body_comp_raw is not None:
+            resp["compromisoRaw"] = body_comp_raw
+
+        return JsonResponse(resp, status=201)
 
     except Exception as e:
         return JsonResponse(

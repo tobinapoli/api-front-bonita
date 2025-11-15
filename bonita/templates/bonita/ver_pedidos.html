@@ -12,7 +12,8 @@
   <div class="container">
     <a class="navbar-brand" href="/bonita/login/">ProjectPlanning</a>
     <div class="ms-auto d-flex gap-2">
-      <button id="btnVolverProyectos" class="btn btn-outline-light btn-sm">
+      <!-- Ahora es botón, no link directo -->
+      <button id="btnVolver" class="btn btn-outline-light btn-sm">
         Volver a proyectos
       </button>
     </div>
@@ -43,10 +44,18 @@
     return new URLSearchParams(location.search).get(n);
   }
 
+  const panel = document.getElementById("panel");
+  const msg   = document.getElementById("msg");
+
+  function setMsg(html) {
+    msg.innerHTML = html || "";
+  }
+
   async function cargarPedidos() {
+    setMsg("");
     const caseId = qp("case");
     if (!caseId) {
-      document.getElementById("panel").innerHTML =
+      panel.innerHTML =
         `<div class="alert alert-warning">No se recibió <b>case</b> en la URL.</div>`;
       return;
     }
@@ -56,28 +65,28 @@
     try {
       j = await res.json();
     } catch (e) {
-      document.getElementById("panel").innerHTML =
+      panel.innerHTML =
         `<div class="alert alert-danger">Respuesta inválida del servidor.</div>`;
       return;
     }
 
     if (!res.ok || j.error) {
-      document.getElementById("panel").innerHTML =
+      panel.innerHTML =
         `<div class="alert alert-danger">Error: ${j.error || res.status}</div>`;
       return;
     }
 
     const arr = j.pedidos || [];
     if (arr.length === 0) {
-      document.getElementById("panel").innerHTML =
+      panel.innerHTML =
         `<div class="alert alert-secondary">No hay pedidos disponibles para este proyecto.</div>`;
       return;
     }
 
     const html = arr.map(p => {
-      const creado = p.creado_en || "";
-      const tipo = p.tipo || "";
-      const estado = p.estado || "";
+      const creado  = p.creado_en || "";
+      const tipo    = p.tipo || "";
+      const estado  = p.estado || "";
       const detalle = p.detalle || "";
 
       return `
@@ -90,7 +99,9 @@
                 ${creado ? ` · Creado: ${creado}` : ""}
               </div>
             </div>
-            <button class="btn btn-sm btn-outline-primary" disabled>
+            <button
+              class="btn btn-sm btn-outline-primary"
+              onclick="colaborar(${p.id})">
               Colaborar
             </button>
           </div>
@@ -99,49 +110,74 @@
       `;
     }).join("");
 
-    document.getElementById("panel").innerHTML = html;
+    panel.innerHTML = html;
   }
 
-  async function finalizarRevisionYVolver() {
+  async function finalizarRevision(verOtroProyecto) {
     const caseId = qp("case");
     if (!caseId) {
-      location.href = "/bonita/";  // fallback bruto
-      return;
+      setMsg(`<div class="alert alert-warning">No se encontró <b>caseId</b> en la URL.</div>`);
+      return { ok: false };
     }
 
-    const urlProyectos = `/bonita/revisar/?case=${encodeURIComponent(caseId)}`;
-    document.getElementById("msg").innerHTML = "";
+    const res = await fetch("/api/bonita/revisar-pedidos/finalizar/", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({
+        caseId: caseId,
+        verOtroProyecto: verOtroProyecto
+      })
+    });
 
+    let j;
     try {
-      const res = await fetch("/api/bonita/revisar-pedidos/finalizar/", {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({ caseId, verOtroProyecto: true })
-      });
-
-      let j = {};
-      try { j = await res.json(); } catch (_) {}
-
-      if (!res.ok || j.ok === false) {
-        // Si falla la API, mostramos mensaje pero igual volvemos a proyectos
-        document.getElementById("msg").innerHTML =
-          `<div class="alert alert-warning">No se pudo notificar a Bonita el cambio de proyecto (se vuelve igual a la lista).</div>`;
-      }
-
+      j = await res.json();
     } catch (e) {
-      // Error de red: también volvemos igual
-      document.getElementById("msg").innerHTML =
-        `<div class="alert alert-warning">Error de red al contactar la API. Se vuelve a la lista igual.</div>`;
+      setMsg(`<div class="alert alert-danger">Respuesta inválida al finalizar la revisión.</div>`);
+      return { ok: false };
     }
 
-    // En todos los casos volvemos a Revisar proyectos para ese case
-    location.href = urlProyectos;
+    if (!res.ok || j.ok === false) {
+      setMsg(`<div class="alert alert-danger">Error al finalizar 'Revisar pedidos': ${j.error || res.status}</div>`);
+      return { ok: false };
+    }
+
+    return { ok: true };
+  }
+
+  async function colaborar(pedidoId) {
+    setMsg("");
+    const caseId     = qp("case");
+    const proyectoId = qp("proyecto");
+
+    // verOtroProyecto = false → el gateway toma el camino hacia "Registrar compromiso"
+    const r = await finalizarRevision(false);
+    if (!r.ok) return;
+
+    window.location.href =
+      `/bonita/compromiso/?case=${encodeURIComponent(caseId)}&proyecto=${encodeURIComponent(proyectoId)}&pedido=${encodeURIComponent(pedidoId)}`;
+  }
+
+  async function volverAProyectos() {
+    setMsg("");
+    const caseId = qp("case");
+
+    // verOtroProyecto = true → el gateway vuelve a "Revisar proyectos"
+    const r = await finalizarRevision(true);
+    if (!r.ok) return;
+
+    window.location.href =
+      `/bonita/revisar/?case=${encodeURIComponent(caseId)}`;
   }
 
   document.getElementById("btnCargar").addEventListener("click", cargarPedidos);
-  document.getElementById("btnVolverProyectos").addEventListener("click", finalizarRevisionYVolver);
+  document.getElementById("btnVolver").addEventListener("click", volverAProyectos);
 
+  // Carga inicial
   cargarPedidos();
+
+  // Exponer colaborar en window para usarlo en los onClick de los botones generados
+  window.colaborar = colaborar;
 </script>
 </body>
 </html>

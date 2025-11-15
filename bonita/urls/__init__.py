@@ -9,4 +9,5 @@ urlpatterns = [
     path("revisar/", views.revisar_proyectos_page, name="bonita_revisar_page"),
     path("pedido/",  views.pedido_page,            name="bonita_pedido_page"),
     path("ver-pedidos/", views.revisar_pedidos_proyecto_page, name="bonita_ver_pedidos_page"),
+    path("compromiso/",  views.compromiso_page,    name="bonita_compromiso_page"),  # <-- NUEVO
 ]

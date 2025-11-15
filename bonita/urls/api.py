@@ -7,6 +7,7 @@ from bonita.views import (
     elegir_proyecto_api,
     revisar_pedidos_proyecto_api,
     finalizar_revision_pedidos_api,  # <-- NUEVO
+    registrar_compromiso_api,
 )
 
 urlpatterns = [
@@ -21,4 +22,5 @@ urlpatterns = [
         finalizar_revision_pedidos_api,
         name="bonita_finalizar_revision_pedidos",
     ),
+    path("compromiso/",      registrar_compromiso_api,     name="bonita_compromiso_api"),
 ]
