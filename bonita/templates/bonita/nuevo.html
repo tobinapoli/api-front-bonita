@@ -10,9 +10,6 @@
   <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
     <div class="container">
       <a class="navbar-brand" href="/bonita/login/">ProjectPlanning</a>
-      <div class="ms-auto">
-        <a class="btn btn-outline-light btn-sm" href="/bonita/revisar/?case={{ request.GET.case|default_if_none:'' }}">Revisar proyectos</a>
-      </div>
     </div>
   </nav>
 
@@ -119,6 +116,16 @@
 
     function qp(name){ return new URLSearchParams(location.search).get(name); }
 
+    // 🔐 Solo ONG originante puede ver esta pantalla
+    (function () {
+      const rol = qp("rol");
+      if (rol && rol !== "ong_originante") {
+        document.body.innerHTML =
+          '<div class="container py-5"><div class="alert alert-warning">No tenés permiso para crear proyectos.</div></div>';
+        throw new Error("No autorizado");
+      }
+    })();
+
     function formatDateISO(date) {
       return date.toISOString().split('T')[0];
     }
@@ -133,47 +140,35 @@
       const etapaIniInput = document.getElementById("etapaIniInput");
       const etapaFinInput = document.getElementById("etapaFinInput");
 
-      // Metadata: inicio mínimo = hoy
       metaIniInput.min = todayISO;
-
-      // Metadata: fin mínimo = hoy
       metaFinInput.min = todayISO;
 
-      // Cuando cambia metaIni, actualizar restricciones
       metaIniInput.addEventListener("change", () => {
         const metaIniVal = metaIniInput.value;
         if (metaIniVal) {
-          // Fin debe ser >= inicio
           metaFinInput.min = metaIniVal;
-          // Etapa inicio debe ser >= metaInicio
           etapaIniInput.min = metaIniVal;
         }
       });
 
-      // Cuando cambia metaFin, actualizar restricciones
       metaFinInput.addEventListener("change", () => {
         const metaFinVal = metaFinInput.value;
         if (metaFinVal) {
-          // Etapa fin debe ser <= metaFin
           etapaFinInput.max = metaFinVal;
         }
       });
 
-      // Cuando cambia etapaIni, actualizar restricciones
       etapaIniInput.addEventListener("change", () => {
         const etapaIniVal = etapaIniInput.value;
         if (etapaIniVal) {
-          // Fin de etapa debe ser >= inicio de etapa
           etapaFinInput.min = etapaIniVal;
         }
       });
 
-      // Cuando cambia metaIni nuevamente, limitar etapaIni
       metaIniInput.addEventListener("change", () => {
         const metaIniVal = metaIniInput.value;
         if (metaIniVal) {
           etapaIniInput.min = metaIniVal;
-          // Resetear etapaIni si está fuera del rango
           if (etapaIniInput.value && etapaIniInput.value < metaIniVal) {
             etapaIniInput.value = "";
             etapaFinInput.value = "";
@@ -181,12 +176,10 @@
         }
       });
 
-      // Cuando cambia metaFin nuevamente, limitar etapaFin
       metaFinInput.addEventListener("change", () => {
         const metaFinVal = metaFinInput.value;
         if (metaFinVal) {
           etapaFinInput.max = metaFinVal;
-          // Resetear etapaFin si está fuera del rango
           if (etapaFinInput.value && etapaFinInput.value > metaFinVal) {
             etapaFinInput.value = "";
           }
@@ -196,12 +189,9 @@
 
     function validateClientForm(form) {
       const errors = [];
-
-      // Nombre
       const nombre = (form["nombre"].value || "").trim();
       if (!nombre) errors.push({ path: "nombre", msg: "Requerido." });
 
-      // Fechas de metadata
       const metaIni = form["metadata.fechaInicioPrevista"].value;
       const metaFin = form["metadata.fechaFinPrevista"].value;
       const today = new Date();
@@ -225,7 +215,6 @@
         }
       }
 
-      // Validar fin >= inicio
       if (metaIni && metaFin) {
         const dIni = new Date(metaIni + "T00:00:00");
         const dFin = new Date(metaFin + "T00:00:00");
@@ -234,7 +223,6 @@
         }
       }
 
-      // Etapa
       const etapaNombre = (form["planTrabajo.etapas[0].nombre"].value || "").trim();
       if (!etapaNombre) {
         errors.push({ path: "planTrabajo.etapas[0].nombre", msg: "Requerido." });
@@ -273,7 +261,6 @@
         }
       }
 
-      // Validar fin >= inicio en etapa
       if (etapaIni && etapaFin) {
         const dIni = new Date(etapaIni + "T00:00:00");
         const dFin = new Date(etapaFin + "T00:00:00");
@@ -282,7 +269,6 @@
         }
       }
 
-      // Moneda
       const moneda = form["planEconomico.monedaBase"].value;
       if (!moneda) {
         errors.push({ path: "planEconomico.monedaBase", msg: "Requerido." });
@@ -290,7 +276,6 @@
         errors.push({ path: "planEconomico.monedaBase", msg: `Debe ser uno de: ${VALID_CURRENCIES.join(", ")}` });
       }
 
-      // Rubro
       const rubro = form["planEconomico.presupuestoPorRubro[0].rubro"].value;
       if (!rubro) {
         errors.push({ path: "planEconomico.presupuestoPorRubro[0].rubro", msg: "Requerido." });
@@ -298,7 +283,6 @@
         errors.push({ path: "planEconomico.presupuestoPorRubro[0].rubro", msg: `Debe ser uno de: ${VALID_RUBROS.join(", ")}` });
       }
 
-      // Monto
       const montoStr = form["planEconomico.presupuestoPorRubro[0].monto"].value;
       if (!montoStr) {
         errors.push({ path: "planEconomico.presupuestoPorRubro[0].monto", msg: "Requerido." });
@@ -330,7 +314,6 @@
       e.preventDefault();
       const form = e.target;
 
-      // Validar en cliente
       const clientErrors = validateClientForm(form);
       if (clientErrors.length > 0) {
         displayErrors(clientErrors);
@@ -367,25 +350,22 @@
         body: JSON.stringify(data)
       });
       const json = await res.json();
-      
-      // Si hay errores, mostrarlos
+
       if (!res.ok || (json.errors && json.errors.length > 0)) {
         const errors = json.errors || [{ path: "general", msg: json.error || "Error desconocido" }];
         displayErrors(errors);
       } else if (json.ok && json.caseId && json.proyectoId) {
-        // 🔹 Redirigir automáticamente a la pantalla de registrar pedido
-        const url = `/bonita/pedido/?case=${encodeURIComponent(json.caseId)}&proyecto=${encodeURIComponent(json.proyectoId)}`;
+        const rol = qp("rol") || "";
+        const url =
+          `/bonita/pedido/?case=${encodeURIComponent(json.caseId)}&proyecto=${encodeURIComponent(json.proyectoId)}&rol=${encodeURIComponent(rol)}`;
         location.href = url;
       } else {
-        // Fallback: mostrar respuesta si por algún motivo no vino proyectoId
         document.getElementById("resultado").innerHTML =
           `<pre class="bg-light border p-3 mt-3">${JSON.stringify(json, null, 2)}</pre>`;
       }
     });
 
-    // Inicializar restricciones de fechas cuando carga la página
     document.addEventListener("DOMContentLoaded", initializeDateRestrictions);
   </script>
 </body>
 </html>
-  

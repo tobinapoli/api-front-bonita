@@ -11,7 +11,7 @@
 
 <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
   <div class="container">
-    <a class="navbar-brand" href="/bonita/home/">ProjectPlanning</a>
+    <a class="navbar-brand" href="/bonita/login/">ProjectPlanning</a>
   </div>
 </nav>
 
@@ -53,7 +53,7 @@
         </div>
 
         <div class="d-flex justify-content-between align-items-center">
-          <a href="/bonita/home/" class="btn btn-outline-secondary btn-sm">
+          <a href="/bonita/login/" class="btn btn-outline-secondary btn-sm">
             Volver
           </a>
           <button class="btn btn-primary" id="submitBtn">
@@ -70,6 +70,16 @@
 
 <script>
   function qp(name){ return new URLSearchParams(location.search).get(name); }
+
+  // 🔐 Solo ONG originante puede registrar pedidos
+  (function () {
+    const rol = qp("rol");
+    if (rol && rol !== "ong_originante") {
+      document.body.innerHTML =
+        '<div class="container py-5"><div class="alert alert-warning">No tenés permiso para registrar pedidos.</div></div>';
+      throw new Error("No autorizado");
+    }
+  })();
 
   const form = document.getElementById("pedidoForm");
   const resultado = document.getElementById("resultado");

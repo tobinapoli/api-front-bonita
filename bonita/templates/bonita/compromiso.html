@@ -58,12 +58,24 @@
   const form = document.getElementById("formCompromiso");
   const msgDiv = document.getElementById("msg");
 
+  // 🔐 Solo Red de ONGs puede registrar compromisos
+  (function () {
+    const rol = qp("rol");
+    if (rol && rol !== "red_ongs") {
+      form.classList.add("d-none");
+      msgDiv.innerHTML =
+        '<div class="alert alert-warning">No tenés permiso para registrar compromisos.</div>';
+      throw new Error("No autorizado");
+    }
+  })();
+
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
 
     const caseId    = qp("case");
     const proyecto  = qp("proyecto");
     const pedidoId  = qp("pedido");
+    const rol       = qp("rol") || "";
 
     const tipo      = document.getElementById("tipo").value.trim();
     const detalle   = document.getElementById("detalle").value.trim();
@@ -101,7 +113,7 @@
 
     setTimeout(() => {
       window.location.href =
-        `/bonita/ver-pedidos/?case=${encodeURIComponent(caseId)}&proyecto=${encodeURIComponent(proyecto)}`;
+        `/bonita/ver-pedidos/?case=${encodeURIComponent(caseId)}&proyecto=${encodeURIComponent(proyecto)}&rol=${encodeURIComponent(rol)}`;
     }, 1500);
   });
 </script>

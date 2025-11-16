@@ -12,7 +12,6 @@
   <div class="container">
     <a class="navbar-brand" href="/bonita/login/">ProjectPlanning</a>
     <div class="ms-auto d-flex gap-2">
-      <!-- Ahora es botón, no link directo -->
       <button id="btnVolver" class="btn btn-outline-light btn-sm">
         Volver a proyectos
       </button>
@@ -43,6 +42,16 @@
   function qp(n) {
     return new URLSearchParams(location.search).get(n);
   }
+
+  // 🔐 Solo Red de ONGs puede revisar pedidos
+  (function () {
+    const rol = qp("rol");
+    if (rol && rol !== "red_ongs") {
+      document.body.innerHTML =
+        '<div class="container py-5"><div class="alert alert-warning">No tenés permiso para revisar pedidos.</div></div>';
+      throw new Error("No autorizado");
+    }
+  })();
 
   const panel = document.getElementById("panel");
   const msg   = document.getElementById("msg");
@@ -149,34 +158,31 @@
     setMsg("");
     const caseId     = qp("case");
     const proyectoId = qp("proyecto");
+    const rol        = qp("rol") || "";
 
-    // verOtroProyecto = false → el gateway toma el camino hacia "Registrar compromiso"
     const r = await finalizarRevision(false);
     if (!r.ok) return;
 
     window.location.href =
-      `/bonita/compromiso/?case=${encodeURIComponent(caseId)}&proyecto=${encodeURIComponent(proyectoId)}&pedido=${encodeURIComponent(pedidoId)}`;
+      `/bonita/compromiso/?case=${encodeURIComponent(caseId)}&proyecto=${encodeURIComponent(proyectoId)}&pedido=${encodeURIComponent(pedidoId)}&rol=${encodeURIComponent(rol)}`;
   }
 
   async function volverAProyectos() {
     setMsg("");
     const caseId = qp("case");
+    const rol    = qp("rol") || "";
 
-    // verOtroProyecto = true → el gateway vuelve a "Revisar proyectos"
     const r = await finalizarRevision(true);
     if (!r.ok) return;
 
     window.location.href =
-      `/bonita/revisar/?case=${encodeURIComponent(caseId)}`;
+      `/bonita/revisar/?case=${encodeURIComponent(caseId)}&rol=${encodeURIComponent(rol)}`;
   }
 
   document.getElementById("btnCargar").addEventListener("click", cargarPedidos);
   document.getElementById("btnVolver").addEventListener("click", volverAProyectos);
 
-  // Carga inicial
   cargarPedidos();
-
-  // Exponer colaborar en window para usarlo en los onClick de los botones generados
   window.colaborar = colaborar;
 </script>
 </body>

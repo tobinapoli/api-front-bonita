@@ -11,12 +11,6 @@
 <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
   <div class="container">
     <a class="navbar-brand" href="/bonita/login/">ProjectPlanning</a>
-    <div class="ms-auto">
-      <a class="btn btn-outline-light btn-sm"
-         href="/bonita/nuevo/?case={{ request.GET.case|default_if_none:'' }}">
-        Nuevo proyecto
-      </a>
-    </div>
   </div>
 </nav>
 
@@ -38,6 +32,16 @@
 
 <script>
   function qp(n){ return new URLSearchParams(location.search).get(n); }
+
+  // 🔐 Solo Red de ONGs puede revisar proyectos
+  (function () {
+    const rol = qp("rol");
+    if (rol && rol !== "red_ongs") {
+      document.body.innerHTML =
+        '<div class="container py-5"><div class="alert alert-warning">No tenés permiso para revisar proyectos.</div></div>';
+      throw new Error("No autorizado");
+    }
+  })();
 
   async function cargar() {
     const caseId = qp("case");
@@ -79,6 +83,7 @@
 
   async function colaborar(proyectoId) {
     const caseId = qp("case");
+    const rol = qp("rol") || "";
     if (!caseId) {
       document.getElementById("msg").innerHTML =
         `<div class="alert alert-warning">No se encontró caseId en la URL.</div>`;
@@ -99,13 +104,15 @@
       return;
     }
 
-    // Sigue funcionando igual: se pasa a 'Revisar pedidos' y vamos a la pantalla de pedidos
-    const url = `/bonita/ver-pedidos/?case=${encodeURIComponent(caseId)}&proyecto=${encodeURIComponent(proyectoId)}`;
+    const url =
+      `/bonita/ver-pedidos/?case=${encodeURIComponent(caseId)}&proyecto=${encodeURIComponent(proyectoId)}&rol=${encodeURIComponent(rol)}`;
     location.href = url;
   }
 
   document.getElementById("btnCargar").addEventListener("click", cargar);
   cargar();
+
+  window.colaborar = colaborar;
 </script>
 </body>
 </html>
