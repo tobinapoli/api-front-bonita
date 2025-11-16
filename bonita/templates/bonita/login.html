@@ -20,17 +20,48 @@ document.getElementById("loginForm").addEventListener("submit", async (e) => {
   e.preventDefault();
   const f = e.target;
   const payload = { user: f.user.value, pass: f.pass.value };
-  const res = await fetch("/api/bonita/login/", {
-    method: "POST", headers: {"Content-Type":"application/json"},
-    body: JSON.stringify(payload)
-  });
-  const j = await res.json();
-  if (res.ok && j.ok) {
-    // redirigí al form de proyecto pasando caseId
-    location.href = `/bonita/nuevo/?case=${encodeURIComponent(j.caseId)}`;
-  } else {
-    document.getElementById("out").innerHTML =
-      `<pre class="bg-light border p-3">${JSON.stringify(j,null,2)}</pre>`;
+  const out = document.getElementById("out");
+  out.innerHTML = "";
+
+  try {
+    const res = await fetch("/api/bonita/login/", {
+      method: "POST",
+      headers: {"Content-Type":"application/json"},
+      body: JSON.stringify(payload)
+    });
+    const j = await res.json();
+
+    if (!res.ok || !j.ok) {
+      out.innerHTML =
+        `<pre class="bg-light border p-3">${JSON.stringify(j, null, 2)}</pre>`;
+      return;
+    }
+
+    const caseId = j.caseId;
+
+    // 🔥 NUEVO: pedir next-step y propagar el rol en la URL
+    const res2 = await fetch("/api/bonita/next-step/", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({ caseId })
+    });
+    const j2 = await res2.json();
+
+    if (res2.ok && j2.ok && j2.url) {
+      const u = new URL(j2.url, window.location.origin);
+      if (j2.rol) {
+        u.searchParams.set("rol", j2.rol);
+      }
+      u.searchParams.set("case", caseId);
+      location.href = u.toString();
+    } else {
+      location.href = `/bonita/nuevo/?case=${encodeURIComponent(caseId)}`;
+    }
+
+  } catch (err) {
+    out.innerHTML =
+      `<div class="alert alert-danger">Error de red al hacer login.</div>`;
   }
 });
 </script>
+

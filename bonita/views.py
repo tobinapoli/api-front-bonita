@@ -27,12 +27,21 @@ def login_page(req: HttpRequest):
 
 
 def nuevo_proyecto_page(req: HttpRequest):
-    return render(req, "bonita/nuevo.html")
+    ctx = {
+        "case": req.GET.get("case", ""),
+        "rol": req.GET.get("rol", "")
+    }
+    return render(req, "bonita/nuevo.html", ctx)
+
+
 
 
 def revisar_proyectos_page(req: HttpRequest):
-    return render(req, "bonita/revisar.html")
-
+    ctx = {
+        "case": req.GET.get("case", ""),
+        "rol": req.GET.get("rol", "")
+    }
+    return render(req, "bonita/revisar.html", ctx)
 
 def pedido_page(req: HttpRequest):
     """
@@ -56,14 +65,13 @@ def revisar_pedidos_proyecto_page(req: HttpRequest):
 
 
 def compromiso_page(req: HttpRequest):
-    """
-    Página para registrar un compromiso asociado a un pedido.
-    Espera en la URL:
-      - ?case=<caseId>
-      - ?proyecto=<id del proyecto>
-      - ?pedido=<id del pedido>
-    """
-    return render(req, "bonita/compromiso.html")
+    ctx = {
+        "case": req.GET.get("case", ""),
+        "proyecto": req.GET.get("proyecto", ""),
+        "pedido": req.GET.get("pedido", ""),
+        "rol": req.GET.get("rol", "")
+    }
+    return render(req, "bonita/compromiso.html", ctx)
 
 # --------------------------- Helpers ---------------------------
 
@@ -122,6 +130,69 @@ def login_api(req: HttpRequest):
             status=500,
         )
 
+
+@csrf_exempt
+def next_step_api(req: HttpRequest):
+    """
+    Dado un caseId recién creado, espera la primera tarea 'ready'
+    y decide a qué pantalla debe ir el usuario.
+
+    - Si la tarea es 'Definir plan de trabajo y economico' => ONG originante => /bonita/nuevo/
+    - Si la tarea es 'Revisar proyectos' => Red de ONGs => /bonita/revisar/
+    """
+    if req.method != "POST":
+        return JsonResponse({"error": "POST only"}, status=405)
+
+    data = _json(req)
+    case_id = str(data.get("caseId") or "").strip()
+    if not case_id:
+        return JsonResponse({"ok": False, "error": "Falta caseId"}, status=400)
+
+    try:
+        cli = BonitaClient()
+        cli.login()
+
+        # Esperamos alguna tarea ready del caso (la primera que aparezca)
+        task = cli.wait_ready_task_in_case(
+            case_id,
+            task_name=None,      # sin filtrar por nombre
+            timeout_sec=45,
+        )
+        if not task:
+            return JsonResponse(
+                {"ok": False, "error": "No apareció ninguna tarea ready para este caso."},
+                status=409,
+            )
+
+        name = (task.get("name") or task.get("displayName") or "").strip()
+
+        # Default
+        rol = "desconocido"
+        url = f"/bonita/home/?case={case_id}"
+
+        if name == "Definir plan de trabajo y economico":
+            rol = "ong_originante"
+            url = f"/bonita/nuevo/?case={case_id}"
+        elif name == "Revisar proyectos":
+            rol = "red_ongs"
+            url = f"/bonita/revisar/?case={case_id}"
+
+        return JsonResponse(
+            {
+                "ok": True,
+                "caseId": case_id,
+                "tarea": name,
+                "rol": rol,
+                "url": url,
+            },
+            status=200,
+        )
+
+    except Exception as e:
+        return JsonResponse(
+            {"ok": False, "error": "Fallo al decidir siguiente paso", "detail": str(e)},
+            status=500,
+        )
 
 # --------------------------- API: Iniciar proyecto ---------------------------
 
@@ -379,6 +450,10 @@ def elegir_proyecto_api(req: HttpRequest):
         "caseId": "...",
         "proyectoId": 11
       }
+
+    Si la tarea 'Revisar proyectos' YA NO está ready (porque el flujo ya avanzó),
+    se considera OK igual y NO se devuelve error, para que el front pueda navegar
+    sin romperse aunque el usuario esté en pestañas viejas.
     """
     if req.method != "POST":
         return JsonResponse({"error": "POST only"}, status=405)
@@ -392,7 +467,6 @@ def elegir_proyecto_api(req: HttpRequest):
     if proyecto_id in (None, "", []):
         return JsonResponse({"ok": False, "error": "Falta proyectoId"}, status=400)
 
-    # intentar castear a int si viene como string
     try:
         proyecto_id_int = int(proyecto_id)
     except (TypeError, ValueError):
@@ -416,17 +490,23 @@ def elegir_proyecto_api(req: HttpRequest):
             task_name="Revisar proyectos",
             timeout_sec=45,
         )
+
+        # Si la tarea YA NO está ready, asumimos que ya se ejecutó antes.
+        # No lo tratamos como error para permitir navegación desde pestañas viejas.
         if not task:
             return JsonResponse(
-                {"ok": False, "error": "No apareció la tarea 'Revisar proyectos'."},
-                status=409,
+                {
+                    "ok": True,
+                    "caseId": case_id,
+                    "proyectoId": proyecto_id_int,
+                    "note": "La tarea 'Revisar proyectos' no estaba ready; se asume ya ejecutada.",
+                },
+                status=200,
             )
 
-        # Asignar y ejecutar con el contrato
+        # Si la tarea existe, la ejecutamos normalmente
         cli.assign_task(task["id"], user_id)
-        contract_payload = {
-            "proyectoSeleccionadoId": proyecto_id_int,
-        }
+        contract_payload = {"proyectoSeleccionadoId": proyecto_id_int}
         cli.execute_task(task["id"], contract_payload)
 
         # A partir de acá, el flujo en Bonita pasa a 'Revisar pedidos'
@@ -440,7 +520,6 @@ def elegir_proyecto_api(req: HttpRequest):
             {"ok": False, "error": "Error integrando con Bonita", "detail": str(e)},
             status=500,
         )
-
 
 # --------------------------- API: Revisar proyectos ---------------------------
 
@@ -554,23 +633,32 @@ def finalizar_revision_pedidos_api(req: HttpRequest):
                 status=500,
             )
 
-        # Buscar tarea 'Revisar pedidos'
+        # Buscar tarea 'Revisar pedidos'.
+        # Si no aparece, asumimos que ya fue ejecutada (pestaña vieja / doble click).
         task = cli.wait_ready_task_in_case(
             case_id,
             task_name="Revisar pedidos",
-            timeout_sec=45,
+            timeout_sec=3,
         )
         if not task:
             return JsonResponse(
-                {"ok": False, "error": "No apareció la tarea 'Revisar pedidos' para este caso."},
-                status=409,
+                {
+                    "ok": True,
+                    "caseId": case_id,
+                    "verOtroProyecto": ver_otro,
+                    "note": "La tarea 'Revisar pedidos' no estaba ready; se asume ya ejecutada."
+                },
+                status=200,
             )
 
         # Asignar y ejecutar con el contrato verOtroProyecto
         cli.assign_task(task["id"], user_id)
         cli.execute_task(task["id"], {"verOtroProyecto": ver_otro})
 
-        return JsonResponse({"ok": True, "caseId": case_id, "verOtroProyecto": ver_otro}, status=200)
+        return JsonResponse(
+            {"ok": True, "caseId": case_id, "verOtroProyecto": ver_otro},
+            status=200,
+        )
 
     except Exception as e:
         return JsonResponse(
