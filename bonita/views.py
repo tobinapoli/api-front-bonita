@@ -73,6 +73,13 @@ def compromiso_page(req: HttpRequest):
     }
     return render(req, "bonita/compromiso.html", ctx)
 
+def consejo_page(req: HttpRequest):
+    ctx = {
+        "case": req.GET.get("case", "")
+    }
+    return render(req, "bonita/consejo.html", ctx)
+
+
 # --------------------------- Helpers ---------------------------
 
 def _json(req: HttpRequest) -> Dict[str, Any]:
@@ -88,7 +95,7 @@ def _json(req: HttpRequest) -> Dict[str, Any]:
 def login_api(req: HttpRequest):
     """
     1. Recibe usuario y contraseña del frontend.
-    2. Inicia sesión en Bonita y crea una instancia del proceso ProjectPlanning.
+    2. Según el flag 'consejo' decide si instancia ProjectPlanning o Consejo Directivo.
     3. Devuelve el caseId sin esperar a que aparezcan las tareas (flujo no bloqueante).
     """
     if req.method != "POST":
@@ -97,6 +104,8 @@ def login_api(req: HttpRequest):
     body = _json(req)
     api_user = str(body.get("user") or body.get("username") or "").strip()
     api_pass = str(body.get("pass") or body.get("password") or "").strip()
+    is_consejo = bool(body.get("consejo"))
+
     if not api_user or not api_pass:
         return JsonResponse({"ok": False, "error": "Faltan credenciales"}, status=400)
 
@@ -104,14 +113,19 @@ def login_api(req: HttpRequest):
         cli = BonitaClient()
         cli.login()
 
-        # Buscar proceso ProjectPlanning
-        proc_id = cli.get_process_definition_id(
-            getattr(settings, "BONITA_PROCESS_NAME", "ProjectPlanning"),
-            getattr(settings, "BONITA_PROCESS_VERSION", "1.0"),
-        )
+        # Elegir proceso según el flag "consejo"
+        if is_consejo:
+            proc_name = getattr(settings, "BONITA_PROCESS_NAME_CONSEJO", "Consejo Directivo")
+            proc_version = getattr(settings, "BONITA_PROCESS_VERSION_CONSEJO", "1.0")
+        else:
+            proc_name = getattr(settings, "BONITA_PROCESS_NAME", "ProjectPlanning")
+            proc_version = getattr(settings, "BONITA_PROCESS_VERSION", "1.0")
+
+        # Buscar proceso correspondiente
+        proc_id = cli.get_process_definition_id(proc_name, proc_version)
         if not proc_id:
             return JsonResponse(
-                {"ok": False, "error": "Proceso ProjectPlanning 1.0 no encontrado"},
+                {"ok": False, "error": f"Proceso {proc_name} {proc_version} no encontrado"},
                 status=500,
             )
 
@@ -121,7 +135,6 @@ def login_api(req: HttpRequest):
         if not case_id:
             return JsonResponse({"ok": False, "error": "No se obtuvo caseId"}, status=500)
 
-        # Devolvemos directamente el caseId
         return JsonResponse({"ok": True, "caseId": case_id}, status=200)
 
     except Exception as e:
@@ -139,6 +152,7 @@ def next_step_api(req: HttpRequest):
 
     - Si la tarea es 'Definir plan de trabajo y economico' => ONG originante => /bonita/nuevo/
     - Si la tarea es 'Revisar proyectos' => Red de ONGs => /bonita/revisar/
+    - Si la tarea es 'Revisar proyecto y cargar observaciones' => Consejo Directivo => /bonita/consejo/
     """
     if req.method != "POST":
         return JsonResponse({"error": "POST only"}, status=405)
@@ -156,7 +170,7 @@ def next_step_api(req: HttpRequest):
         task = cli.wait_ready_task_in_case(
             case_id,
             task_name=None,      # sin filtrar por nombre
-            timeout_sec=45,
+            timeout_sec=15,
         )
         if not task:
             return JsonResponse(
@@ -176,6 +190,9 @@ def next_step_api(req: HttpRequest):
         elif name == "Revisar proyectos":
             rol = "red_ongs"
             url = f"/bonita/revisar/?case={case_id}"
+        elif name == "Revisar proyecto y cargar observaciones":
+            rol = "consejo_directivo"
+            url = f"/bonita/consejo/?case={case_id}"
 
         return JsonResponse(
             {
@@ -193,7 +210,6 @@ def next_step_api(req: HttpRequest):
             {"ok": False, "error": "Fallo al decidir siguiente paso", "detail": str(e)},
             status=500,
         )
-
 # --------------------------- API: Iniciar proyecto ---------------------------
 
 @csrf_exempt
@@ -248,7 +264,7 @@ def iniciar_proyecto_api(req: HttpRequest):
         task = cli.wait_ready_task_in_case(
             case_id,
             task_name="Definir plan de trabajo y economico",
-            timeout_sec=45,
+            timeout_sec=15,
         )
         if not task:
             return JsonResponse(
@@ -375,7 +391,7 @@ def registrar_pedido_api(req: HttpRequest):
             )
 
         # Buscar tarea "Registrar pedido"
-        task = cli.wait_ready_task_in_case(case_id, task_name="Registrar pedido", timeout_sec=45)
+        task = cli.wait_ready_task_in_case(case_id, task_name="Registrar pedido", timeout_sec=15)
         if not task:
             return JsonResponse(
                 {"ok": False, "error": "No apareció la tarea 'Registrar pedido'."},
@@ -488,7 +504,7 @@ def elegir_proyecto_api(req: HttpRequest):
         task = cli.wait_ready_task_in_case(
             case_id,
             task_name="Revisar proyectos",
-            timeout_sec=45,
+            timeout_sec=15,
         )
 
         # Si la tarea YA NO está ready, asumimos que ya se ejecutó antes.
@@ -724,7 +740,7 @@ def registrar_compromiso_api(req: HttpRequest):
         task = cli.wait_ready_task_in_case(
             case_id,
             task_name="Registrar compromiso",
-            timeout_sec=45,
+            timeout_sec=15,
         )
         if not task:
             return JsonResponse(
