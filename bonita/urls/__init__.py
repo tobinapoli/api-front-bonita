@@ -11,4 +11,6 @@ urlpatterns = [
     path("ver-pedidos/", views.revisar_pedidos_proyecto_page, name="bonita_ver_pedidos_page"),
     path("compromiso/",  views.compromiso_page,    name="bonita_compromiso_page"),  
     path("consejo/", views.consejo_page, name="bonita_consejo_page"),
+    path("evaluar/", views.evaluar_propuestas_page, name="bonita_evaluar_propuestas_page"),
+
 ]

@@ -79,6 +79,13 @@ def consejo_page(req: HttpRequest):
     }
     return render(req, "bonita/consejo.html", ctx)
 
+def evaluar_propuestas_page(req: HttpRequest):
+    ctx = {
+        "case": req.GET.get("case", ""),
+        "proyecto": req.GET.get("proyecto", ""),
+        "rol": req.GET.get("rol", ""),
+    }
+    return render(req, "bonita/evaluar_propuestas.html", ctx)
 
 # --------------------------- Helpers ---------------------------
 
@@ -357,19 +364,20 @@ def registrar_pedido_api(req: HttpRequest):
       {
         "caseId": "...",
         "pedidoTipo": "...",
-        "pedidoDetalle": "..."
+        "pedidoDetalle": "...",
+        "crearOtroPedido": true/false
       }
 
-    El conector de salida de esa tarea se encarga de hablar con la API JWT
-    para crear el pedido en el proyecto correspondiente.
+    El conector de salida crea el pedido en la API JWT.
     """
     if req.method != "POST":
         return JsonResponse({"error": "POST only"}, status=405)
 
     data = _json(req)
-    case_id = str(data.get("caseId") or "").strip()
-    pedido_tipo = str(data.get("pedidoTipo") or "").strip()
+    case_id        = str(data.get("caseId") or "").strip()
+    pedido_tipo    = str(data.get("pedidoTipo") or "").strip()
     pedido_detalle = str(data.get("pedidoDetalle") or "").strip()
+    crear_otro_raw = data.get("crearOtroPedido")
 
     if not case_id:
         return JsonResponse({"ok": False, "error": "Falta caseId"}, status=400)
@@ -377,6 +385,15 @@ def registrar_pedido_api(req: HttpRequest):
         return JsonResponse({"ok": False, "error": "Falta pedidoTipo"}, status=400)
     if not pedido_detalle:
         return JsonResponse({"ok": False, "error": "Falta pedidoDetalle"}, status=400)
+
+    # Normalizamos el booleano
+    crear_otro = False
+    if isinstance(crear_otro_raw, bool):
+        crear_otro = crear_otro_raw
+    elif isinstance(crear_otro_raw, str):
+        crear_otro = crear_otro_raw.strip().lower() in ("1", "true", "t", "yes", "y", "si", "sí")
+    elif isinstance(crear_otro_raw, (int, float)):
+        crear_otro = bool(crear_otro_raw)
 
     try:
         cli = BonitaClient()
@@ -390,23 +407,38 @@ def registrar_pedido_api(req: HttpRequest):
                 status=500,
             )
 
-        # Buscar tarea "Registrar pedido"
-        task = cli.wait_ready_task_in_case(case_id, task_name="Registrar pedido", timeout_sec=15)
-        if not task:
-            return JsonResponse(
-                {"ok": False, "error": "No apareció la tarea 'Registrar pedido'."},
-                status=409,
-            )
+        # -------------------------------------------------------
+        # 🔥 CAMBIO CLAVE: SI LA TAREA YA NO ESTÁ READY → OK
+        # -------------------------------------------------------
+        task = cli.wait_ready_task_in_case(
+            case_id,
+            task_name="Registrar pedido",
+            timeout_sec=5,
+        )
 
-        # Asignar y ejecutar tarea con el contrato
+        if not task:
+            # El flujo probablemente ya avanzó a "Evaluar propuestas"
+            return JsonResponse(
+                {
+                    "ok": True,
+                    "caseId": case_id,
+                    "crearOtroPedido": crear_otro,
+                    "note": "La tarea 'Registrar pedido' no estaba ready; se asume ya ejecutada."
+                },
+                status=200,
+            )
+        # -------------------------------------------------------
+
+        # Asignar y ejecutar la tarea normalmente
         cli.assign_task(task["id"], user_id)
         payload_contrato = {
-            "pedidoTipo": pedido_tipo,
-            "pedidoDetalle": pedido_detalle,
+            "pedidoTipo":       pedido_tipo,
+            "pedidoDetalle":    pedido_detalle,
+            "crearOtroPedido":  crear_otro,
         }
         cli.execute_task(task["id"], payload_contrato)
 
-        # Leer variables que deja el conector REST de salida
+        # Leer variables del conector
         pedido_id = None
         status_code_pedido = None
         body_pedido_json = None
@@ -441,7 +473,9 @@ def registrar_pedido_api(req: HttpRequest):
             "caseId": case_id,
             "pedidoId": pedido_id,
             "statusCode": status_code_pedido,
+            "crearOtroPedido": crear_otro,
         }
+
         if body_pedido_json is not None:
             resp["pedido"] = body_pedido_json
         elif body_pedido_raw is not None:

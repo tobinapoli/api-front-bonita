@@ -52,13 +52,19 @@
           ></textarea>
         </div>
 
-        <div class="d-flex justify-content-between align-items-center">
+        <div class="d-flex justify-content-between align-items-center gap-2">
           <a href="/bonita/login/" class="btn btn-outline-secondary btn-sm">
             Volver
           </a>
-          <button class="btn btn-primary" id="submitBtn">
-            Enviar pedido
-          </button>
+
+          <div class="d-flex gap-2">
+            <button type="button" class="btn btn-secondary" id="btnOtro">
+              Guardar y agregar otro
+            </button>
+            <button type="button" class="btn btn-primary" id="btnEvaluar">
+              Guardar y pasar a evaluar
+            </button>
+          </div>
         </div>
       </form>
 
@@ -81,23 +87,25 @@
     }
   })();
 
-  const form = document.getElementById("pedidoForm");
-  const resultado = document.getElementById("resultado");
-  const submitBtn = document.getElementById("submitBtn");
+  const form       = document.getElementById("pedidoForm");
+  const resultado  = document.getElementById("resultado");
+  const btnOtro    = document.getElementById("btnOtro");
+  const btnEvaluar = document.getElementById("btnEvaluar");
 
-  form.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const f = e.target;
-
+  async function enviarPedido(crearOtroPedido) {
     resultado.innerHTML = "";
-    submitBtn.disabled = true;
-    submitBtn.textContent = "Enviando...";
+
+    btnOtro.disabled    = true;
+    btnEvaluar.disabled = true;
+
+    const f = form;
 
     const payload = {
-      caseId: qp("case"),
-      proyectoId: qp("proyecto"),
-      pedidoTipo: f.pedidoTipo.value,
-      pedidoDetalle: f.pedidoDetalle.value
+      caseId:       qp("case"),
+      proyectoId:   qp("proyecto"),
+      pedidoTipo:   f.pedidoTipo.value,
+      pedidoDetalle:f.pedidoDetalle.value,
+      crearOtroPedido: crearOtroPedido
     };
 
     try {
@@ -117,12 +125,28 @@
           </div>
         `;
       } else {
-        resultado.innerHTML = `
-          <div class="alert alert-success">
-            Pedido registrado correctamente.<br>
-          </div>
-        `;
-        form.reset();
+        if (crearOtroPedido) {
+          resultado.innerHTML = `
+            <div class="alert alert-success">
+              Pedido registrado correctamente. Podés cargar otro pedido.
+            </div>
+          `;
+          f.reset();
+        } else {
+          resultado.innerHTML = `
+            <div class="alert alert-success">
+              Pedido registrado. Avanzando a la siguiente etapa...
+            </div>
+          `;
+          setTimeout(() => {
+            const caseId     = qp("case");
+            const proyectoId = qp("proyecto");
+            const rol        = qp("rol") || "ong_originante";
+
+            window.location.href =
+              `/bonita/evaluar/?case=${encodeURIComponent(caseId)}&proyecto=${encodeURIComponent(proyectoId)}&rol=${encodeURIComponent(rol)}`;
+          }, 1200);
+        }
       }
     } catch (err) {
       resultado.innerHTML = `
@@ -131,10 +155,13 @@
         </div>
       `;
     } finally {
-      submitBtn.disabled = false;
-      submitBtn.textContent = "Enviar pedido";
+      btnOtro.disabled    = false;
+      btnEvaluar.disabled = false;
     }
-  });
+  }
+
+  btnOtro.addEventListener("click",   () => enviarPedido(true));
+  btnEvaluar.addEventListener("click",() => enviarPedido(false));
 </script>
 
 </body>
