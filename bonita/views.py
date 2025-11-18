@@ -1129,3 +1129,199 @@ def ver_observaciones_proyecto_api(req: HttpRequest):
             {"ok": False, "error": "Error consultando observaciones", "detail": str(e)},
             status=500,
         )
+
+# --------------------------- API: Revisar compromisos (Evaluar propuestas) ---
+
+
+@csrf_exempt
+def revisar_compromisos_api(req: HttpRequest):
+    """
+    Devuelve lo que dejó el conector ON_ENTER de la tarea 'Evaluar propuestas'
+    en la variable de proceso 'compromisosJson'.
+
+    El conector en Bonita debe:
+      - Hacer GET a:  /api/pedidos/<pedidoId>/compromisos/
+      - Guardar el cuerpo en la variable de caso 'compromisosJson'
+      - Guardar el status HTTP en 'code_compromisos'
+    """
+    case_id = (req.GET.get("case") or _json(req).get("caseId") or "").strip()
+    if not case_id:
+        return JsonResponse({"error": "Falta caseId/case"}, status=400)
+
+    try:
+        cli = BonitaClient()
+        cli.login()
+
+        # Lista de compromisos
+        var = cli.get_case_variable(case_id, "compromisosJson")
+        if not var or "value" not in var or not (var["value"] or "").strip():
+            return JsonResponse(
+                {
+                    "ok": True,
+                    "caseId": case_id,
+                    "compromisos": [],
+                    "mensaje": "No hay compromisos para este pedido",
+                },
+                status=200,
+            )
+
+        try:
+            compromisos = json.loads(var["value"])
+        except Exception:
+            compromisos = []
+
+        # Código HTTP que dejó el conector (opcional)
+        status_code = None
+        v_code = cli.get_case_variable(case_id, "code_compromisos")
+        if v_code and "value" in v_code and (v_code["value"] or "").strip():
+            try:
+                status_code = int(v_code["value"])
+            except Exception:
+                status_code = v_code["value"]
+
+        return JsonResponse(
+            {
+                "ok": True,
+                "caseId": case_id,
+                "compromisos": compromisos,
+                "statusCode": status_code,
+            },
+            status=200,
+        )
+
+    except Exception as e:
+        return JsonResponse(
+            {"error": "Error consultando Bonita", "detail": str(e)},
+            status=500,
+        )
+
+
+# --------------------------- API: Ejecutar 'Evaluar propuestas' --------------
+
+
+@csrf_exempt
+def evaluar_propuestas_api(req: HttpRequest):
+    """
+    Completa la tarea 'Evaluar propuestas'.
+
+    Espera JSON:
+      {
+        "caseId": "...",
+        "proyectoId": 17,                     # opcional, solo para info
+        "compromisoIdSeleccionado": 2 | null, # puede venir vacío
+        "volverAEvaluar": true/false          # true = vuelve a la misma tarea
+      }
+    """
+    if req.method != "POST":
+        return JsonResponse({"error": "POST only"}, status=405)
+
+    data = _json(req)
+    case_id = str(data.get("caseId") or "").strip()
+    proyecto_raw = data.get("proyectoId")
+    comp_raw = data.get("compromisoIdSeleccionado")
+    volver_raw = data.get("volverAEvaluar")
+
+    if not case_id:
+        return JsonResponse({"ok": False, "error": "Falta caseId"}, status=400)
+
+    # proyectoId lo usamos solo como info, no es obligatorio
+    try:
+        proyecto_id = int(proyecto_raw) if proyecto_raw not in (None, "", []) else None
+    except (TypeError, ValueError):
+        proyecto_id = None
+
+    # compromisoIdSeleccionado puede venir vacío si sólo queremos volver a evaluar
+    comp_str: str
+    comp_id: int | None = None
+    if comp_raw in (None, "", []):
+        comp_str = ""          # TEXT vacío para cumplir contrato
+    else:
+        try:
+            comp_id = int(comp_raw)
+            comp_str = str(comp_id)
+        except (TypeError, ValueError):
+            # si vino cualquier cosa, lo mandamos como string igual
+            comp_str = str(comp_raw)
+
+    # normalizamos volverAEvaluar a booleano
+    volver = False
+    if isinstance(volver_raw, bool):
+        volver = volver_raw
+    elif isinstance(volver_raw, str):
+        volver = volver_raw.strip().lower() in ("1", "true", "t", "yes", "y", "si", "sí")
+    elif isinstance(volver_raw, (int, float)):
+        volver = bool(volver_raw)
+
+    # si NO quiere volver a evaluar y tampoco hay compromiso seleccionado,
+    # devolvemos error de dominio (para que el front muestre algo entendible)
+    if not volver and not comp_str:
+        return JsonResponse(
+            {
+                "ok": False,
+                "error": "Debés seleccionar un compromiso o marcar 'volver a evaluar'."
+            },
+            status=400,
+        )
+
+    try:
+        cli = BonitaClient()
+        cli.login()
+
+        assignee_username = getattr(settings, "BONITA_ASSIGNEE", "walter.bates")
+        user_id = cli.get_user_id_by_username(assignee_username)
+        if not user_id:
+            return JsonResponse(
+                {
+                    "ok": False,
+                    "error": "Usuario Bonita no encontrado",
+                    "detail": assignee_username,
+                },
+                status=500,
+            )
+
+        # Buscamos la tarea 'Evaluar propuestas'
+        task = cli.wait_ready_task_in_case(
+            case_id,
+            task_name="Evaluar propuestas",
+            timeout_sec=10,
+        )
+
+        # Si ya no está ready, asumimos que alguien la ejecutó antes (pestaña vieja).
+        if not task:
+            return JsonResponse(
+                {
+                    "ok": True,
+                    "caseId": case_id,
+                    "proyectoId": proyecto_id,
+                    "compromisoIdSeleccionado": comp_id,
+                    "volverAEvaluar": volver,
+                    "note": "La tarea 'Evaluar propuestas' no estaba ready; se asume ya ejecutada.",
+                },
+                status=200,
+            )
+
+        # IMPORTANTE: SIEMPRE mandar los DOS campos del contrato
+        contract_payload = {
+            "compromisoIdSeleccionado": comp_str,  # TEXT (puede ir vacío)
+            "volverAEvaluar": volver,              # BOOLEAN
+        }
+
+        cli.assign_task(task["id"], user_id)
+        cli.execute_task(task["id"], contract_payload)
+
+        return JsonResponse(
+            {
+                "ok": True,
+                "caseId": case_id,
+                "proyectoId": proyecto_id,
+                "compromisoIdSeleccionado": comp_id,
+                "volverAEvaluar": volver,
+            },
+            status=200,
+        )
+
+    except Exception as e:
+        return JsonResponse(
+            {"ok": False, "error": "Error integrando con Bonita", "detail": str(e)},
+            status=500,
+        )

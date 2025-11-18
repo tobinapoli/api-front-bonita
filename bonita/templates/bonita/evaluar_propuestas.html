@@ -29,31 +29,13 @@
     </div>
 
     <div class="card-body">
-
       <div class="alert alert-info">
-        Esta pantalla es un placeholder para que la ONG originante evalúe las propuestas
-        recibidas para sus pedidos. Más adelante acá vas a listar pedidos, compromisos, etc.
+        Acá la ONG originante puede evaluar los compromisos recibidos para sus pedidos.
+        Si todavía no hay compromisos, podés usar <strong>“Volver a evaluar”</strong>
+        para que el flujo vuelva a esta tarea cuando existan nuevas propuestas.
       </div>
 
-      <div class="mb-3">
-        <h5>Resumen del proyecto</h5>
-        <p class="text-muted">
-          Acá más adelante podés mostrar nombre, descripción, fechas, etc. del proyecto
-          seleccionado.
-        </p>
-      </div>
-
-      <div class="mb-3">
-        <h5>Propuestas recibidas</h5>
-        <p class="text-muted mb-2">
-          En esta sección, cuando integres el backend, podrías listar cada compromiso recibido,
-          con su estado y la ONG que lo ofrece.
-        </p>
-
-        <div class="border rounded p-3 text-center text-muted">
-          <em>Sin funcionalidad todavía – solo maqueta.</em>
-        </div>
-      </div>
+      <div id="panelCompromisos" class="mb-3"></div>
 
       <div class="d-flex justify-content-between mt-4">
         <a href="/bonita/login/" class="btn btn-outline-secondary btn-sm">
@@ -61,18 +43,216 @@
         </a>
 
         <div class="d-flex gap-2">
-          <button class="btn btn-outline-primary btn-sm" type="button">
-            Guardar evaluación (futuro)
+          <!-- Botón que manda volverAEvaluar = true -->
+          <button id="btnVolverEvaluar" class="btn btn-outline-primary btn-sm" type="button">
+            Volver a evaluar
           </button>
-          <button class="btn btn-success btn-sm" type="button">
-            Confirmar y finalizar (futuro)
+
+          <!-- Botón que confirma selección (volverAEvaluar = false) -->
+          <button id="btnConfirmar" class="btn btn-success btn-sm" type="button">
+            Confirmar selección
           </button>
         </div>
       </div>
 
+      <div id="msg" class="mt-3"></div>
     </div>
   </div>
 </div>
+
+<script>
+  function qp(n) {
+    return new URLSearchParams(location.search).get(n);
+  }
+
+  const panel = document.getElementById("panelCompromisos");
+  const msg   = document.getElementById("msg");
+  const btnVolver   = document.getElementById("btnVolverEvaluar");
+  const btnConfirm  = document.getElementById("btnConfirmar");
+
+  function setMsg(html) {
+    msg.innerHTML = html || "";
+  }
+
+  // ----- Render de compromisos -----
+  function renderCompromisos(lista) {
+    if (!lista || lista.length === 0) {
+      panel.innerHTML = `
+        <div class="alert alert-secondary">
+          No hay compromisos para este pedido todavía.
+          Podés usar el botón <strong>"Volver a evaluar más tarde"</strong> y guardar.
+        </div>`;
+      return;
+    }
+
+    const html = lista.map(c => {
+      const detalle = c.detalle || "";
+      const monto   = (c.monto !== null && c.monto !== undefined)
+        ? `Monto ofrecido: <strong>${c.monto}</strong><br>`
+        : "";
+      const fecha   = c.fecha ? `Fecha: <strong>${c.fecha}</strong><br>` : "";
+      const estado  = c.estado ? `Estado: <strong>${c.estado}</strong>` : "";
+
+      return `
+        <div class="border rounded p-3 mb-2">
+          <div class="form-check d-flex justify-content-between align-items-center">
+            <div>
+              <input class="form-check-input me-2"
+                     type="radio"
+                     name="compromisoRadio"
+                     id="comp_${c.id}"
+                     value="${c.id}">
+              <label class="form-check-label" for="comp_${c.id}">
+                <strong>Compromiso #${c.id}</strong>
+                <div class="small text-muted mt-1">
+                  ${detalle ? `${detalle}<br>` : ""}
+                  ${monto}${fecha}${estado}
+                </div>
+              </label>
+            </div>
+
+            <button type="button"
+                    class="btn btn-sm btn-outline-success"
+                    onclick="aceptarCompromisoDesdeCard(${c.id})">
+              Aceptar
+            </button>
+          </div>
+        </div>
+      `;
+    }).join("");
+
+    panel.innerHTML = `
+      <h5 class="mb-3">Propuestas recibidas</h5>
+      ${html}
+    `;
+  }
+
+  // ----- Carga de compromisos desde la API -----
+  async function cargarCompromisos() {
+    setMsg("");
+    const caseId = qp("case");
+    if (!caseId) {
+      panel.innerHTML =
+        `<div class="alert alert-warning">No se recibió <b>case</b> en la URL.</div>`;
+      return;
+    }
+
+    try {
+      const res = await fetch(`/api/bonita/revisar-compromisos/?case=${encodeURIComponent(caseId)}`);
+      const j = await res.json();
+
+      if (!res.ok || j.ok === false) {
+        panel.innerHTML =
+          `<div class="alert alert-danger">Error al cargar compromisos: ${j.error || res.status}</div>`;
+        return;
+      }
+
+      renderCompromisos(j.compromisos || []);
+    } catch (e) {
+      panel.innerHTML =
+        `<div class="alert alert-danger">Error de red al cargar compromisos.</div>`;
+    }
+  }
+
+  function obtenerCompromisoSeleccionado() {
+    const radio = document.querySelector('input[name="compromisoRadio"]:checked');
+    return radio ? parseInt(radio.value, 10) : null;
+  }
+
+  // Aceptar desde el botón de la tarjeta
+  function aceptarCompromisoDesdeCard(id) {
+    const radio = document.getElementById(`comp_${id}`);
+    if (radio) {
+      radio.checked = true;
+    }
+    // Reutiliza el mismo flujo de "Confirmar selección"
+    enviarEvaluacion(false);
+  }
+
+  // Exponerla al scope global para el onclick del HTML
+  window.aceptarCompromisoDesdeCard = aceptarCompromisoDesdeCard;
+
+  // ----- Enviar decisión a la API -----
+  async function enviarEvaluacion(volverAEvaluar) {
+    setMsg("");
+    const caseId     = qp("case");
+    const proyectoId = qp("proyecto");
+
+    if (!caseId) {
+      setMsg(`<div class="alert alert-warning">No se encontró <b>caseId</b> en la URL.</div>`);
+      return;
+    }
+
+    const compId = obtenerCompromisoSeleccionado();
+
+    // Si NO quiere volver a evaluar y tampoco eligió compromiso, avisamos
+    if (!volverAEvaluar && !compId) {
+      setMsg(`
+        <div class="alert alert-warning">
+          Tenés que seleccionar un compromiso o usar el botón 
+          <strong>"Volver a evaluar más tarde"</strong>.
+        </div>`);
+      return;
+    }
+
+    btnVolver.disabled  = true;
+    btnConfirm.disabled = true;
+
+    try {
+      const res = await fetch("/api/bonita/evaluar-propuestas/", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({
+          caseId: caseId,
+          proyectoId: proyectoId ? parseInt(proyectoId, 10) : null,
+          compromisoIdSeleccionado: compId,
+          volverAEvaluar: volverAEvaluar
+        })
+      });
+
+      const j = await res.json();
+
+      if (!res.ok || j.ok === false) {
+        setMsg(`
+          <div class="alert alert-danger">
+            Error al guardar la evaluación: ${j.error || res.status}
+          </div>`);
+        return;
+      }
+
+      if (volverAEvaluar) {
+        setMsg(`
+          <div class="alert alert-success">
+            Recargando pagina..
+          </div>`);
+
+        // 🔥 Recargar la página después de que Bonita vuelva a dejar la tarea en ready
+        setTimeout(() => {
+          location.reload();
+        }, 1000);
+      } else {
+        setMsg(`
+          <div class="alert alert-success">
+            Evaluación guardada correctamente. El flujo continuará con el compromiso seleccionado.
+          </div>`);
+      }
+
+    } catch (e) {
+      setMsg(`
+        <div class="alert alert-danger">
+          Error de red al guardar la evaluación.
+        </div>`);
+    } finally {
+      btnVolver.disabled  = false;
+      btnConfirm.disabled = false;
+    }
+  }
+
+  btnVolver.addEventListener("click", () => enviarEvaluacion(true));
+  btnConfirm.addEventListener("click", () => enviarEvaluacion(false));
+
+  cargarCompromisos();
+</script>
 
 </body>
 </html>

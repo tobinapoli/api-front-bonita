@@ -12,6 +12,9 @@ from bonita.views import (
     obtener_proyectos_en_ejecucion_api,
     enviar_observaciones_consejo_api,
     ver_observaciones_proyecto_api,
+    revisar_compromisos_api,
+    evaluar_propuestas_api,
+    
 )
 
 urlpatterns = [
@@ -33,4 +36,6 @@ urlpatterns = [
     path("consejo/proyectos/", obtener_proyectos_en_ejecucion_api, name="bonita_consejo_proyectos"),
     path("consejo/proyectos/<int:proyecto_id>/observaciones/", ver_observaciones_proyecto_api, name="bonita_ver_observaciones"),
     path("consejo/observaciones/", enviar_observaciones_consejo_api, name="bonita_consejo_observaciones"),
+    path("revisar-compromisos/", revisar_compromisos_api),
+    path("evaluar-propuestas/", evaluar_propuestas_api),
 ]
