@@ -840,3 +840,292 @@ def registrar_compromiso_api(req: HttpRequest):
             {"ok": False, "error": "Error integrando con Bonita", "detail": str(e)},
             status=500,
         )
+
+
+# --------------------------- API: Consejo Directivo ---------------------------
+
+@csrf_exempt
+def obtener_proyectos_en_ejecucion_api(req: HttpRequest):
+    """
+    Devuelve la lista de proyectos en ejecución para que el Consejo Directivo 
+    pueda revisarlos.
+    
+    IMPORTANTE: Este endpoint espera que el conector ON_ENTER de la tarea
+    "Revisar proyecto y cargar observaciones" en Bonita haya consultado la
+    API JWT (endpoint GET /api/consejo/proyectos/) y guardado el resultado
+    en la variable de proceso 'proyectosJson'.
+    
+    Espera en GET o POST:
+      - caseId o case
+    """
+    case_id = (req.GET.get("case") or _json(req).get("caseId") or "").strip()
+    if not case_id:
+        return JsonResponse({"error": "Falta caseId/case"}, status=400)
+
+    try:
+        cli = BonitaClient()
+        cli.login()
+
+        # Leer la variable 'proyectosJson' que debería contener los proyectos
+        # en ejecución obtenidos por el conector de entrada de Bonita
+        var = cli.get_case_variable(case_id, "proyectosJson")
+        
+        if not var or "value" not in var or not (var["value"] or "").strip():
+            return JsonResponse(
+                {
+                    "ok": True, 
+                    "caseId": case_id, 
+                    "proyectos": [], 
+                    "mensaje": "No hay proyectos en ejecución para revisar"
+                },
+                status=200,
+            )
+
+        try:
+            proyectos = json.loads(var["value"])
+            # Si proyectos es una lista, devolver tal cual
+            # Si es un objeto con propiedad "proyectos", extraerla
+            if isinstance(proyectos, dict) and "proyectos" in proyectos:
+                proyectos = proyectos["proyectos"]
+        except Exception as e:
+            return JsonResponse(
+                {"error": "Error parseando proyectos", "detail": str(e)},
+                status=500,
+            )
+
+        return JsonResponse(
+            {
+                "ok": True, 
+                "caseId": case_id, 
+                "proyectos": proyectos,
+                "count": len(proyectos) if isinstance(proyectos, list) else 0
+            }, 
+            status=200
+        )
+        
+    except Exception as e:
+        return JsonResponse(
+            {"error": "Error consultando Bonita", "detail": str(e)},
+            status=500,
+        )
+
+
+@csrf_exempt
+def enviar_observaciones_consejo_api(req: HttpRequest):
+    """
+    Completa la tarea 'Revisar proyecto y cargar observaciones' del proceso 
+    Consejo Directivo.
+    
+    Espera un JSON:
+      {
+        "caseId": "...",
+        "proyectoId": 123,
+        "observaciones": "texto de las observaciones..."
+      }
+    
+    IMPORTANTE: El conector de salida de esta tarea en Bonita debe:
+    1. Leer las variables del contrato (proyectoId, observaciones)
+    2. Hacer POST a la API JWT: /api/proyectos/{proyectoId}/observaciones/crear/
+       con el body: {"texto": observaciones}
+    3. Guardar la respuesta en variables como 'observacionId' y 'status_code_observacion'
+    
+    El conector debe usar el token JWT almacenado en la variable 'access' del proceso.
+    """
+    if req.method != "POST":
+        return JsonResponse({"error": "POST only"}, status=405)
+
+    data = _json(req)
+    case_id = str(data.get("caseId") or "").strip()
+    proyecto_id_raw = data.get("proyectoId")
+    observaciones = str(data.get("observaciones") or "").strip()
+
+    if not case_id:
+        return JsonResponse({"ok": False, "error": "Falta caseId"}, status=400)
+    if proyecto_id_raw in (None, "", []):
+        return JsonResponse({"ok": False, "error": "Falta proyectoId"}, status=400)
+    if not observaciones:
+        return JsonResponse({"ok": False, "error": "Falta texto de observaciones"}, status=400)
+
+    try:
+        proyecto_id = int(proyecto_id_raw)
+    except (TypeError, ValueError):
+        return JsonResponse({"ok": False, "error": "proyectoId debe ser entero"}, status=400)
+
+    try:
+        cli = BonitaClient()
+        cli.login()
+
+        assignee_username = getattr(settings, "BONITA_ASSIGNEE", "walter.bates")
+        user_id = cli.get_user_id_by_username(assignee_username)
+        if not user_id:
+            return JsonResponse(
+                {"ok": False, "error": "Usuario Bonita no encontrado", "detail": assignee_username},
+                status=500,
+            )
+
+        # Buscar tarea "Revisar proyecto y cargar observaciones"
+        task = cli.wait_ready_task_in_case(
+            case_id,
+            task_name="Revisar proyecto y cargar observaciones",
+            timeout_sec=15,
+        )
+        
+        if not task:
+            # La tarea ya fue ejecutada (navegación desde pestaña vieja)
+            return JsonResponse(
+                {
+                    "ok": True,
+                    "caseId": case_id,
+                    "proyectoId": proyecto_id,
+                    "note": "La tarea 'Revisar proyecto y cargar observaciones' no estaba ready; se asume ya ejecutada."
+                },
+                status=200,
+            )
+
+        # Asignar y ejecutar con el contrato
+        cli.assign_task(task["id"], user_id)
+        payload_contrato = {
+            "proyectoId": proyecto_id,
+            "observaciones": observaciones,
+        }
+        cli.execute_task(task["id"], payload_contrato)
+
+        # Esperar a que el conector de salida complete
+        # y leer las variables que dejó
+        observacion_id = None
+        status_code = None
+        body_observacion = None
+
+        # Dar tiempo al conector para ejecutarse
+        time.sleep(1)
+
+        var_id = cli.get_case_variable(case_id, "observacionId")
+        if var_id and "value" in var_id:
+            v = var_id["value"]
+            try:
+                observacion_id = int(v)
+            except Exception:
+                observacion_id = v
+
+        var_status = cli.get_case_variable(case_id, "status_code_observacion")
+        if var_status and "value" in var_status:
+            v = var_status["value"]
+            try:
+                status_code = int(v)
+            except Exception:
+                status_code = v
+
+        var_body = cli.get_case_variable(case_id, "body_observacion")
+        if var_body and "value" in var_body and (var_body["value"] or "").strip():
+            try:
+                body_observacion = json.loads(var_body["value"])
+            except Exception:
+                body_observacion = var_body["value"]
+
+        return JsonResponse(
+            {
+                "ok": True,
+                "caseId": case_id,
+                "proyectoId": proyecto_id,
+                "observacionId": observacion_id,
+                "statusCode": status_code,
+                "body": body_observacion,
+                "mensaje": "Observaciones enviadas correctamente"
+            },
+            status=201,
+        )
+
+    except Exception as e:
+        return JsonResponse(
+            {"ok": False, "error": "Error integrando con Bonita", "detail": str(e)},
+            status=500,
+        )
+
+
+@csrf_exempt
+def ver_observaciones_proyecto_api(req: HttpRequest):
+    """
+    Obtiene las observaciones de un proyecto específico.
+    
+    Este endpoint hace una consulta directa a la API JWT para obtener
+    las observaciones de un proyecto.
+    
+    Espera en GET:
+      - case o caseId: ID del caso en Bonita
+      - proyectoId: ID del proyecto (en la URL path)
+    
+    Retorna las observaciones con su estado (pendiente, respondida, vencida)
+    y días restantes.
+    """
+    import requests
+    
+    case_id = (req.GET.get("case") or req.GET.get("caseId") or "").strip()
+    proyecto_id_raw = req.resolver_match.kwargs.get("proyecto_id")
+    
+    if not case_id:
+        return JsonResponse({"error": "Falta caseId/case"}, status=400)
+    if not proyecto_id_raw:
+        return JsonResponse({"error": "Falta proyectoId en URL"}, status=400)
+    
+    try:
+        proyecto_id = int(proyecto_id_raw)
+    except (TypeError, ValueError):
+        return JsonResponse({"error": "proyectoId debe ser entero"}, status=400)
+    
+    try:
+        cli = BonitaClient()
+        cli.login()
+        
+        # Obtener el token JWT de la variable del caso
+        var_token = cli.get_case_variable(case_id, "access")
+        if not var_token or "value" not in var_token or not (var_token["value"] or "").strip():
+            return JsonResponse(
+                {"error": "No se encontró token de autenticación en el caso"},
+                status=401,
+            )
+        
+        jwt_token = var_token["value"].strip()
+        
+        # Construir URL de la API
+        api_base_url = getattr(settings, "API_BASE_URL", "http://127.0.0.1:8000")
+        url = f"{api_base_url}/api/proyectos/{proyecto_id}/observaciones/"
+        
+        # Hacer request a la API JWT
+        headers = {
+            "Authorization": f"Bearer {jwt_token}",
+            "Content-Type": "application/json",
+        }
+        
+        response = requests.get(url, headers=headers, timeout=10)
+        
+        if response.status_code == 200:
+            observaciones = response.json()
+            return JsonResponse(
+                {
+                    "ok": True,
+                    "caseId": case_id,
+                    "proyectoId": proyecto_id,
+                    "observaciones": observaciones,
+                },
+                status=200,
+            )
+        else:
+            return JsonResponse(
+                {
+                    "ok": False,
+                    "error": f"Error al obtener observaciones: {response.status_code}",
+                    "detail": response.text,
+                },
+                status=response.status_code,
+            )
+            
+    except requests.RequestException as e:
+        return JsonResponse(
+            {"ok": False, "error": "Error de conexión con API", "detail": str(e)},
+            status=500,
+        )
+    except Exception as e:
+        return JsonResponse(
+            {"ok": False, "error": "Error consultando observaciones", "detail": str(e)},
+            status=500,
+        )
