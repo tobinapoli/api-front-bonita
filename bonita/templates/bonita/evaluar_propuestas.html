@@ -80,7 +80,7 @@
       panel.innerHTML = `
         <div class="alert alert-secondary">
           No hay compromisos para este pedido todavía.
-          Podés usar el botón <strong>"Volver a evaluar más tarde"</strong> y guardar.
+          Podés usar el botón <strong>"Volver a evaluar"</strong> para que el flujo vuelva más adelante.
         </div>`;
       return;
     }
@@ -190,7 +190,7 @@
       setMsg(`
         <div class="alert alert-warning">
           Tenés que seleccionar un compromiso o usar el botón 
-          <strong>"Volver a evaluar más tarde"</strong>.
+          <strong>"Volver a evaluar"</strong>.
         </div>`);
       return;
     }
@@ -223,10 +223,10 @@
       if (volverAEvaluar) {
         setMsg(`
           <div class="alert alert-success">
-            Recargando pagina..
+            Recargando página...
           </div>`);
 
-        // 🔥 Recargar la página después de que Bonita vuelva a dejar la tarea en ready
+        // Dejá que Bonita vuelva a poner la tarea "Evaluar propuestas" en ready
         setTimeout(() => {
           location.reload();
         }, 1000);
@@ -235,6 +235,11 @@
           <div class="alert alert-success">
             Evaluación guardada correctamente. El flujo continuará con el compromiso seleccionado.
           </div>`);
+
+        // Volver a leer compromisosJson, que ya tiene el estado actualizado ("cumplido")
+        setTimeout(() => {
+          cargarCompromisos();
+        }, 800);
       }
 
     } catch (e) {

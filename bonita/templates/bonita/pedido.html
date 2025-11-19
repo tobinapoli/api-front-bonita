@@ -57,14 +57,9 @@
             Volver
           </a>
 
-          <div class="d-flex gap-2">
-            <button type="button" class="btn btn-secondary" id="btnOtro">
-              Guardar y agregar otro
-            </button>
-            <button type="button" class="btn btn-primary" id="btnEvaluar">
-              Guardar y pasar a evaluar
-            </button>
-          </div>
+          <button type="button" class="btn btn-primary" id="btnGuardar">
+            Guardar pedido y pasar a evaluar
+          </button>
         </div>
       </form>
 
@@ -87,25 +82,21 @@
     }
   })();
 
-  const form       = document.getElementById("pedidoForm");
-  const resultado  = document.getElementById("resultado");
-  const btnOtro    = document.getElementById("btnOtro");
-  const btnEvaluar = document.getElementById("btnEvaluar");
+  const form      = document.getElementById("pedidoForm");
+  const resultado = document.getElementById("resultado");
+  const btnGuardar = document.getElementById("btnGuardar");
 
-  async function enviarPedido(crearOtroPedido) {
+  async function enviarPedido() {
     resultado.innerHTML = "";
-
-    btnOtro.disabled    = true;
-    btnEvaluar.disabled = true;
+    btnGuardar.disabled = true;
 
     const f = form;
 
     const payload = {
-      caseId:       qp("case"),
-      proyectoId:   qp("proyecto"),
-      pedidoTipo:   f.pedidoTipo.value,
-      pedidoDetalle:f.pedidoDetalle.value,
-      crearOtroPedido: crearOtroPedido
+      caseId:        qp("case"),
+      proyectoId:    qp("proyecto"),
+      pedidoTipo:    f.pedidoTipo.value,
+      pedidoDetalle: f.pedidoDetalle.value
     };
 
     try {
@@ -125,28 +116,19 @@
           </div>
         `;
       } else {
-        if (crearOtroPedido) {
-          resultado.innerHTML = `
-            <div class="alert alert-success">
-              Pedido registrado correctamente. Podés cargar otro pedido.
-            </div>
-          `;
-          f.reset();
-        } else {
-          resultado.innerHTML = `
-            <div class="alert alert-success">
-              Pedido registrado. Avanzando a la siguiente etapa...
-            </div>
-          `;
-          setTimeout(() => {
-            const caseId     = qp("case");
-            const proyectoId = qp("proyecto");
-            const rol        = qp("rol") || "ong_originante";
+        resultado.innerHTML = `
+          <div class="alert alert-success">
+            Pedido registrado. Avanzando a la siguiente etapa...
+          </div>
+        `;
+        setTimeout(() => {
+          const caseId     = qp("case");
+          const proyectoId = qp("proyecto");
+          const rol        = qp("rol") || "ong_originante";
 
-            window.location.href =
-              `/bonita/evaluar/?case=${encodeURIComponent(caseId)}&proyecto=${encodeURIComponent(proyectoId)}&rol=${encodeURIComponent(rol)}`;
-          }, 1200);
-        }
+          window.location.href =
+            `/bonita/evaluar/?case=${encodeURIComponent(caseId)}&proyecto=${encodeURIComponent(proyectoId)}&rol=${encodeURIComponent(rol)}`;
+        }, 1200);
       }
     } catch (err) {
       resultado.innerHTML = `
@@ -155,13 +137,11 @@
         </div>
       `;
     } finally {
-      btnOtro.disabled    = false;
-      btnEvaluar.disabled = false;
+      btnGuardar.disabled = false;
     }
   }
 
-  btnOtro.addEventListener("click",   () => enviarPedido(true));
-  btnEvaluar.addEventListener("click",() => enviarPedido(false));
+  btnGuardar.addEventListener("click", enviarPedido);
 </script>
 
 </body>

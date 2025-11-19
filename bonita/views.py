@@ -364,8 +364,7 @@ def registrar_pedido_api(req: HttpRequest):
       {
         "caseId": "...",
         "pedidoTipo": "...",
-        "pedidoDetalle": "...",
-        "crearOtroPedido": true/false
+        "pedidoDetalle": "..."
       }
 
     El conector de salida crea el pedido en la API JWT.
@@ -377,7 +376,6 @@ def registrar_pedido_api(req: HttpRequest):
     case_id        = str(data.get("caseId") or "").strip()
     pedido_tipo    = str(data.get("pedidoTipo") or "").strip()
     pedido_detalle = str(data.get("pedidoDetalle") or "").strip()
-    crear_otro_raw = data.get("crearOtroPedido")
 
     if not case_id:
         return JsonResponse({"ok": False, "error": "Falta caseId"}, status=400)
@@ -385,15 +383,6 @@ def registrar_pedido_api(req: HttpRequest):
         return JsonResponse({"ok": False, "error": "Falta pedidoTipo"}, status=400)
     if not pedido_detalle:
         return JsonResponse({"ok": False, "error": "Falta pedidoDetalle"}, status=400)
-
-    # Normalizamos el booleano
-    crear_otro = False
-    if isinstance(crear_otro_raw, bool):
-        crear_otro = crear_otro_raw
-    elif isinstance(crear_otro_raw, str):
-        crear_otro = crear_otro_raw.strip().lower() in ("1", "true", "t", "yes", "y", "si", "sí")
-    elif isinstance(crear_otro_raw, (int, float)):
-        crear_otro = bool(crear_otro_raw)
 
     try:
         cli = BonitaClient()
@@ -407,38 +396,34 @@ def registrar_pedido_api(req: HttpRequest):
                 status=500,
             )
 
-        # -------------------------------------------------------
-        # 🔥 CAMBIO CLAVE: SI LA TAREA YA NO ESTÁ READY → OK
-        # -------------------------------------------------------
+        # Buscamos la tarea 'Registrar pedido' en ese caso
         task = cli.wait_ready_task_in_case(
             case_id,
             task_name="Registrar pedido",
             timeout_sec=5,
         )
 
+        # Si la tarea YA NO está ready, asumimos que ya se ejecutó antes
+        # (por ejemplo, pestaña vieja). No lo tratamos como error duro.
         if not task:
-            # El flujo probablemente ya avanzó a "Evaluar propuestas"
             return JsonResponse(
                 {
                     "ok": True,
                     "caseId": case_id,
-                    "crearOtroPedido": crear_otro,
                     "note": "La tarea 'Registrar pedido' no estaba ready; se asume ya ejecutada."
                 },
                 status=200,
             )
-        # -------------------------------------------------------
 
-        # Asignar y ejecutar la tarea normalmente
+        # Asignar y ejecutar la tarea con el contrato de Bonita
         cli.assign_task(task["id"], user_id)
         payload_contrato = {
-            "pedidoTipo":       pedido_tipo,
-            "pedidoDetalle":    pedido_detalle,
-            "crearOtroPedido":  crear_otro,
+            "pedidoTipo":    pedido_tipo,
+            "pedidoDetalle": pedido_detalle,
         }
         cli.execute_task(task["id"], payload_contrato)
 
-        # Leer variables del conector
+        # Leer variables que dejó el conector de salida
         pedido_id = None
         status_code_pedido = None
         body_pedido_json = None
@@ -473,7 +458,6 @@ def registrar_pedido_api(req: HttpRequest):
             "caseId": case_id,
             "pedidoId": pedido_id,
             "statusCode": status_code_pedido,
-            "crearOtroPedido": crear_otro,
         }
 
         if body_pedido_json is not None:
@@ -488,6 +472,7 @@ def registrar_pedido_api(req: HttpRequest):
             {"ok": False, "error": "Error integrando con Bonita", "detail": str(e)},
             status=500,
         )
+
 
 
 @csrf_exempt
@@ -1201,17 +1186,6 @@ def revisar_compromisos_api(req: HttpRequest):
 
 @csrf_exempt
 def evaluar_propuestas_api(req: HttpRequest):
-    """
-    Completa la tarea 'Evaluar propuestas'.
-
-    Espera JSON:
-      {
-        "caseId": "...",
-        "proyectoId": 17,                     # opcional, solo para info
-        "compromisoIdSeleccionado": 2 | null, # puede venir vacío
-        "volverAEvaluar": true/false          # true = vuelve a la misma tarea
-      }
-    """
     if req.method != "POST":
         return JsonResponse({"error": "POST only"}, status=405)
 
@@ -1220,45 +1194,47 @@ def evaluar_propuestas_api(req: HttpRequest):
     proyecto_raw = data.get("proyectoId")
     comp_raw = data.get("compromisoIdSeleccionado")
     volver_raw = data.get("volverAEvaluar")
+    finalizar_raw = data.get("finalizarPlan")  # viene del botón "Aceptar y finalizar"
 
     if not case_id:
         return JsonResponse({"ok": False, "error": "Falta caseId"}, status=400)
 
-    # proyectoId lo usamos solo como info, no es obligatorio
+    # proyectoId es opcional
     try:
         proyecto_id = int(proyecto_raw) if proyecto_raw not in (None, "", []) else None
     except (TypeError, ValueError):
         proyecto_id = None
 
-    # compromisoIdSeleccionado puede venir vacío si sólo queremos volver a evaluar
+    # compromiso seleccionado (puede venir vacío si es "volver a evaluar")
     comp_str: str
     comp_id: int | None = None
     if comp_raw in (None, "", []):
-        comp_str = ""          # TEXT vacío para cumplir contrato
+        comp_str = ""
     else:
         try:
             comp_id = int(comp_raw)
             comp_str = str(comp_id)
         except (TypeError, ValueError):
-            # si vino cualquier cosa, lo mandamos como string igual
             comp_str = str(comp_raw)
 
-    # normalizamos volverAEvaluar a booleano
-    volver = False
-    if isinstance(volver_raw, bool):
-        volver = volver_raw
-    elif isinstance(volver_raw, str):
-        volver = volver_raw.strip().lower() in ("1", "true", "t", "yes", "y", "si", "sí")
-    elif isinstance(volver_raw, (int, float)):
-        volver = bool(volver_raw)
+    def _to_bool(v) -> bool:
+        if isinstance(v, bool):
+            return v
+        if isinstance(v, str):
+            return v.strip().lower() in ("1", "true", "t", "yes", "y", "si", "sí")
+        if isinstance(v, (int, float)):
+            return bool(v)
+        return False
 
-    # si NO quiere volver a evaluar y tampoco hay compromiso seleccionado,
-    # devolvemos error de dominio (para que el front muestre algo entendible)
+    volver = _to_bool(volver_raw)
+    finalizar = _to_bool(finalizar_raw)  # solo importa cuando se auto-ejecuta "Acumular..."
+
+    # Si no quiere volver a evaluar, tiene que haber un compromiso elegido
     if not volver and not comp_str:
         return JsonResponse(
             {
                 "ok": False,
-                "error": "Debés seleccionar un compromiso o marcar 'volver a evaluar'."
+                "error": "Debés seleccionar un compromiso o marcar 'volver a evaluar'.",
             },
             status=400,
         )
@@ -1279,15 +1255,15 @@ def evaluar_propuestas_api(req: HttpRequest):
                 status=500,
             )
 
-        # Buscamos la tarea 'Evaluar propuestas'
+        # 1) Ejecutar la tarea "Evaluar propuestas"
         task = cli.wait_ready_task_in_case(
             case_id,
             task_name="Evaluar propuestas",
             timeout_sec=10,
         )
 
-        # Si ya no está ready, asumimos que alguien la ejecutó antes (pestaña vieja).
         if not task:
+            # Si ya no está ready, asumimos que se ejecutó antes (pestaña vieja, etc.)
             return JsonResponse(
                 {
                     "ok": True,
@@ -1295,19 +1271,34 @@ def evaluar_propuestas_api(req: HttpRequest):
                     "proyectoId": proyecto_id,
                     "compromisoIdSeleccionado": comp_id,
                     "volverAEvaluar": volver,
+                    "finalizarPlan": finalizar,
                     "note": "La tarea 'Evaluar propuestas' no estaba ready; se asume ya ejecutada.",
                 },
                 status=200,
             )
 
-        # IMPORTANTE: SIEMPRE mandar los DOS campos del contrato
+        # Importante: el contrato de esta tarea SOLO tiene compromisoIdSeleccionado y volverAEvaluar
         contract_payload = {
-            "compromisoIdSeleccionado": comp_str,  # TEXT (puede ir vacío)
-            "volverAEvaluar": volver,              # BOOLEAN
+            "compromisoIdSeleccionado": comp_str,
+            "volverAEvaluar": volver,
         }
 
         cli.assign_task(task["id"], user_id)
         cli.execute_task(task["id"], contract_payload)
+
+        # 2) Si NO es "volver a evaluar" y hay compromiso elegido,
+        # auto-ejecutamos "Acumular compromiso en el plan"
+        if not volver and comp_str:
+            task2 = cli.wait_ready_task_in_case(
+                case_id,
+                task_name="Acumular compromiso en el plan",
+                timeout_sec=10,
+            )
+            if task2:
+                cli.assign_task(task2["id"], user_id)
+                # acá va el contrato correcto de esa tarea:
+                # tiene una entrada 'finalizarPlan' que en Operaciones copia a etapasCubiertas
+                cli.execute_task(task2["id"], {"finalizarPlan": finalizar})
 
         return JsonResponse(
             {
@@ -1316,6 +1307,7 @@ def evaluar_propuestas_api(req: HttpRequest):
                 "proyectoId": proyecto_id,
                 "compromisoIdSeleccionado": comp_id,
                 "volverAEvaluar": volver,
+                "finalizarPlan": finalizar,
             },
             status=200,
         )
