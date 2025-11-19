@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Evaluar Respuesta ONG</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body class="bg-light">
+
+<nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+  <div class="container">
+    <a class="navbar-brand" href="#">Consejo Directivo</a>
+  </div>
+</nav>
+
+<div class="container py-5" style="max-width:800px">
+  <div class="card shadow">
+    <div class="card-header bg-warning text-dark">
+      <h4 class="mb-0">⚠️ Evaluar Respuesta de ONG</h4>
+    </div>
+    <div class="card-body">
+      <div id="loading" class="text-center">
+        <div class="spinner-border text-primary"></div>
+        <p>Cargando respuesta pendiente...</p>
+      </div>
+
+      <div id="contenido" style="display:none;">
+        <div class="alert alert-info">
+            <h5>Observación Original:</h5>
+            <p id="txtObservacion" class="mb-0 fst-italic"></p>
+        </div>
+
+        <div class="card mb-4 border-success">
+            <div class="card-header bg-success text-white">Respuesta de la ONG</div>
+            <div class="card-body">
+                <h5 class="card-title" id="txtRespuesta"></h5>
+                <p class="text-muted small mb-0">Fecha: <span id="txtFecha"></span></p>
+            </div>
+        </div>
+
+        <hr>
+        <h5 class="mb-3">Decisión del Consejo:</h5>
+        <div class="d-flex gap-3">
+            <button onclick="enviarDecision(false)" class="btn btn-danger flex-grow-1 p-3">
+                ❌ RECHAZAR
+                <br><small>La respuesta no es suficiente</small>
+            </button>
+            <button onclick="enviarDecision(true)" class="btn btn-success flex-grow-1 p-3">
+                ✅ APROBAR
+                <br><small>Cerrar observación</small>
+            </button>
+        </div>
+        
+        <input type="hidden" id="obsId">
+      </div>
+
+      <div id="errorMsg" class="alert alert-danger mt-3" style="display:none;"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+  const caseId = new URLSearchParams(location.search).get("case");
+
+  async function cargarDatos() {
+    try {
+      // Consultamos las observaciones respondidas
+      // IMPORTANTE: Usamos el endpoint que creamos antes en Django
+      // Necesitamos que el backend nos de acceso público o manejar token, 
+      // por simplicidad asumimos sesión de navegador o llamada directa si estás en mismo dominio.
+      // Si falla por auth, avísame y ajustamos el endpoint.
+      
+      const res = await fetch(`/api/bonita/consejo/datos-evaluacion/?case=${encodeURIComponent(caseId)}`);
+      
+      if (!res.ok) throw new Error("Error cargando observaciones");
+      
+      const j = await res.json(); 
+      
+      
+      const lista = j.respuestas || []; 
+      
+      // Ahora sí validamos
+      if (lista.length > 0) {
+          const obs = lista[0];
+          document.getElementById("txtObservacion").innerText = obs.texto;
+          document.getElementById("txtRespuesta").innerText = obs.respuesta;
+          document.getElementById("txtFecha").innerText = obs.fecha_respuesta;
+          document.getElementById("obsId").value = obs.id;
+          
+          document.getElementById("loading").style.display = "none";
+          document.getElementById("contenido").style.display = "block";
+      } else {
+          document.getElementById("loading").innerHTML = "<p>No se encontraron respuestas pendientes.</p>";
+      }
+      
+    } catch (e) {
+      mostrarError(e.message);
+    }
+  }
+
+  async function enviarDecision(aprobada) {
+    const obsId = document.getElementById("obsId").value;
+    if (!obsId) return;
+    
+    // Feedback visual inmediato
+    const btnReject = document.querySelector('.btn-danger');
+    const btnApprove = document.querySelector('.btn-success');
+    btnReject.disabled = true;
+    btnApprove.disabled = true;
+    
+    try {
+        // 1. Enviar la decisión a Bonita
+        const res = await fetch("/api/bonita/consejo/evaluar/", { 
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({
+                caseId: caseId,
+                observacionId: parseInt(obsId),
+                aprobada: aprobada
+            })
+        });
+
+        const j = await res.json();
+        
+        if (j.ok) {
+            // 2. En lugar de ir al login, preguntamos cuál es el siguiente paso
+            // Mostrar un pequeño loading o mensaje
+            document.getElementById("contenido").style.opacity = "0.5";
+            
+            // Llamamos a next-step pasando el caseId
+            const resNext = await fetch("/api/bonita/next-step/", {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({ caseId: caseId })
+            });
+            
+            const jNext = await resNext.json();
+            
+            if (jNext.ok && jNext.url) {
+                // 3. Redirección directa a la siguiente tarea (bucle o fin)
+                const u = new URL(jNext.url, window.location.origin);
+                // Aseguramos mantener los parámetros necesarios
+                if (jNext.rol) u.searchParams.set("rol", jNext.rol);
+                u.searchParams.set("case", caseId);
+                
+                window.location.href = u.toString();
+            } else {
+                // Fallback solo si falla next-step
+                window.location.href = "/bonita/consejo/?case=" + caseId; 
+            }
+
+        } else {
+            throw new Error(j.error || "Error al procesar");
+        }
+    } catch (e) {
+        alert(e.message);
+        btnReject.disabled = false;
+        btnApprove.disabled = false;
+        document.getElementById("contenido").style.opacity = "1";
+    }
+  }
+
+  cargarDatos();
+</script>
+
+</body>
+</html>

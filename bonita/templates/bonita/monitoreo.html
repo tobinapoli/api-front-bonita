@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-  <meta charset="UTF-8">
+  <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Monitoreo del proyecto</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -70,14 +70,53 @@
         <a href="/bonita/login/" class="btn btn-outline-secondary btn-sm">
           Volver al inicio
         </a>
+        
         <a id="btnVolverProyecto" href="#" class="btn btn-outline-primary btn-sm">
-          Volver al proyecto
+          Volver a Evaluar / Agregar Compromisos
         </a>
+      </div>
+      
+      <div class="mt-3 text-end" id="divFinalizar">
+          <button class="btn btn-success" id="btnFinalizarProyecto" onclick="finalizarProyecto()">
+            Finalizar Proyecto
+          </button>
       </div>
     </div>
   </div>
 </div>
 
+<div class="modal fade" id="modalResponder" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header bg-danger text-white">
+        <h5 class="modal-title">Responder a Observación del Consejo</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="alert alert-warning">
+            <strong>Observación recibida:</strong>
+            <p class="mb-0 mt-2" id="textoObservacionModal" style="font-style: italic;">...</p>
+        </div>
+        
+        <form id="formResponder">
+            <input type="hidden" id="idObservacionResponder">
+            <div class="mb-3">
+                <label for="textoRespuesta" class="form-label fw-bold">Tu Respuesta / Plan de acción:</label>
+                <textarea id="textoRespuesta" class="form-control" rows="5" required placeholder="Describe cómo vas a solucionar lo señalado por el Consejo..."></textarea>
+            </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+        <button type="button" class="btn btn-danger" onclick="enviarRespuesta()">
+            <i class="bi bi-send"></i> Enviar Respuesta
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script>
   function qp(n) {
     return new URLSearchParams(location.search).get(n);
@@ -89,6 +128,14 @@
   const tablaEtapas = document.getElementById("tablaEtapas");
   const listaCompromisos = document.getElementById("listaCompromisos");
   const btnVolverProyecto = document.getElementById("btnVolverProyecto");
+  const btnFinalizarProyecto = document.getElementById("btnFinalizarProyecto");
+  
+  let modalResponder = null;
+
+  document.addEventListener('DOMContentLoaded', function() {
+    modalResponder = new bootstrap.Modal(document.getElementById('modalResponder'));
+    cargarResumen();
+  });
 
   function setMsg(html) {
     msg.innerHTML = html || "";
@@ -103,6 +150,7 @@
       return;
     }
 
+    // Link para volver a agregar compromisos
     btnVolverProyecto.href = `/bonita/evaluar/?case=${encodeURIComponent(caseId)}&proyecto=${encodeURIComponent(proyectoId)}&rol=ong_originante`;
 
     try {
@@ -114,6 +162,7 @@
         return;
       }
 
+      // 1. Renderizar datos básicos
       pNombre.textContent = j.nombreProyecto || "-";
       pDescripcion.textContent = j.descripcion || "-";
 
@@ -151,18 +200,116 @@
             </div>
           </div>
         `).join("");
-
         listaCompromisos.innerHTML = html;
       }
 
-      setMsg("");
+      // 2. Lógica de OBSERVACIONES PENDIENTES
+      if (j.observacionPendiente) {
+          const obs = j.observacionPendiente;
+          let tituloAlert = "⚠️ Tienes una observación pendiente del Consejo";
+          let claseAlert = "alert-danger";
+          
+          if (obs.estado === 'rechazada') {
+              tituloAlert = "❌ Tu respuesta anterior fue RECHAZADA";
+          }
+
+          // Bloquear botón de finalizar
+          if(btnFinalizarProyecto) btnFinalizarProyecto.disabled = true;
+          btnVolverProyecto.classList.add("disabled"); 
+
+          setMsg(`
+            <div class="alert ${claseAlert} border border-danger shadow-sm">
+                <h4>${tituloAlert}</h4>
+                <p>El Consejo Directivo ha realizado observaciones sobre la ejecución del proyecto. Debes responder para poder continuar.</p>
+                <hr>
+                <p><strong>Detalle:</strong> "${obs.texto}"</p>
+                <div class="text-end">
+                    <button class="btn btn-danger fw-bold" onclick="abrirModalResponder(${obs.id}, '${escapeHtml(obs.texto)}')">
+                        Responder Observación
+                    </button>
+                </div>
+            </div>
+          `);
+      } else {
+          // Todo limpio
+          setMsg("");
+          if(btnFinalizarProyecto) btnFinalizarProyecto.disabled = false;
+          btnVolverProyecto.classList.remove("disabled");
+      }
 
     } catch (e) {
+      console.error(e);
       setMsg('<div class="alert alert-danger">Error de red al cargar el resumen.</div>');
     }
   }
 
-  cargarResumen();
+  // --- Funciones para Responder ---
+
+  function abrirModalResponder(id, texto) {
+      document.getElementById("idObservacionResponder").value = id;
+      document.getElementById("textoObservacionModal").innerText = texto;
+      document.getElementById("textoRespuesta").value = "";
+      modalResponder.show();
+  }
+
+  async function enviarRespuesta() {
+      const caseId = qp("case");
+      const obsId = document.getElementById("idObservacionResponder").value;
+      const resp = document.getElementById("textoRespuesta").value.trim();
+      
+      if(!resp) {
+          alert("Por favor, escribe una respuesta.");
+          return;
+      }
+
+      const btn = document.querySelector('#modalResponder .btn-danger');
+      const originalText = btn.innerHTML;
+      btn.disabled = true;
+      btn.innerHTML = "Enviando...";
+
+      try {
+        // Llamada a la nueva API que empuja la tarea en Bonita
+        const res = await fetch("/api/bonita/responder-observacion/", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({ 
+                caseId: caseId, 
+                observacionId: parseInt(obsId), 
+                respuesta: resp 
+            })
+        });
+        
+        const j = await res.json();
+
+        if(j.ok) {
+            alert("Respuesta enviada correctamente. El Consejo Directivo la evaluará.");
+            modalResponder.hide();
+            location.reload(); // Recargar para actualizar el estado
+        } else {
+            alert("Error al enviar respuesta: " + (j.error || "Desconocido"));
+        }
+
+      } catch (err) {
+          alert("Error de red al enviar la respuesta.");
+      } finally {
+          btn.disabled = false;
+          btn.innerHTML = originalText;
+      }
+  }
+
+  function finalizarProyecto() {
+      alert("Funcionalidad de finalizar proyecto en construcción...");
+  }
+
+  function escapeHtml(text) {
+    if (!text) return text;
+    return text
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+  }
 </script>
 
 </body>
