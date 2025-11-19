@@ -2,8 +2,12 @@
 
 from django.urls import path
 from bonita.views import (
+    consejo_evaluar_page,
+    enviar_evaluacion_consejo_api,
     login_api,
     iniciar_proyecto_api,
+    obtener_datos_evaluacion_api,
+    responder_observacion_bonita_api,
     revisar_proyectos_api,
     registrar_pedido_api,
     elegir_proyecto_api,
@@ -47,4 +51,8 @@ urlpatterns = [
     path("revisar-compromisos/", revisar_compromisos_api,  name="bonita_revisar_compromisos"),
     path("evaluar-propuestas/",  evaluar_propuestas_api,   name="bonita_evaluar_propuestas"),
     path("resumen-proyecto/",    resumen_proyecto_api,     name="bonita_resumen_proyecto"),
+    path("responder-observacion/", responder_observacion_bonita_api, name="bonita_responder_obs"),
+
+    path("consejo/evaluar/", enviar_evaluacion_consejo_api, name="bonita_consejo_evaluar_api"),
+    path("consejo/datos-evaluacion/", obtener_datos_evaluacion_api, name="bonita_datos_evaluacion"),
 ]

@@ -222,6 +222,7 @@
                                  (p.observaciones_respondidas || 0) + 
                                  (p.observaciones_vencidas || 0);
       const tieneObservaciones = totalObservaciones > 0;
+      const tieneObservacionesPendientes = (p.observaciones_pendientes || 0) > 0;
       
       return `
       <div class="card proyecto-card shadow-sm mb-3">
@@ -245,6 +246,12 @@
                   ${p.observaciones_vencidas > 0 ? `<span class="badge bg-danger me-1">⚠️ ${p.observaciones_vencidas} vencidas</span>` : ''}
                 </div>
               ` : ''}
+              ${tieneObservacionesPendientes ? `
+                <div class="alert alert-warning mt-3 mb-0 py-2 small">
+                  <i class="bi bi-exclamation-triangle"></i> <strong>Atención:</strong> Este proyecto tiene observaciones pendientes de respuesta. 
+                  No se pueden crear nuevas observaciones hasta que las actuales sean respondidas.
+                </div>
+              ` : ''}
             </div>
             <div class="col-md-4 text-end d-flex align-items-center justify-content-end gap-2">
               ${tieneObservaciones ? `
@@ -252,9 +259,11 @@
                   <i class="bi bi-eye"></i> Ver Observaciones
                 </button>
               ` : ''}
-              <button class="btn btn-primary" onclick="abrirModalObservaciones(${p.id}, '${escapeHtml(p.nombre || 'Proyecto sin nombre')}', '${escapeHtml(p.descripcion || '')}')">
-                <i class="bi bi-pencil-square"></i> ${tieneObservaciones ? 'Nueva Observación' : 'Crear Observación'}
-              </button>
+              ${!tieneObservacionesPendientes ? `
+                <button class="btn btn-primary" onclick="abrirModalObservaciones(${p.id}, '${escapeHtml(p.nombre || 'Proyecto sin nombre')}', '${escapeHtml(p.descripcion || '')}')">
+                  <i class="bi bi-pencil-square"></i> ${tieneObservaciones ? 'Nueva Observación' : 'Crear Observación'}
+                </button>
+              ` : ''}
             </div>
           </div>
         </div>

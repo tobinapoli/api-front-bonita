@@ -8,6 +8,7 @@ from django.http import JsonResponse, HttpRequest
 from django.shortcuts import render
 from django.views.decorators.csrf import csrf_exempt
 from .models import ProyectoMonitoreo
+import requests
 
 from .bonita_client import BonitaClient
 from .validators import validate_iniciar_payload
@@ -209,6 +210,9 @@ def next_step_api(req: HttpRequest):
         elif name == "Revisar proyecto y cargar observaciones":
             rol = "consejo_directivo"
             url = f"/bonita/consejo/?case={case_id}"
+        elif name == "Evaluar Respuestas":  
+            rol = "consejo_directivo"
+            url = f"/bonita/consejo/evaluar/?case={case_id}"
 
         return JsonResponse(
             {
@@ -226,6 +230,80 @@ def next_step_api(req: HttpRequest):
             {"ok": False, "error": "Fallo al decidir siguiente paso", "detail": str(e)},
             status=500,
         )
+def consejo_evaluar_page(req: HttpRequest):
+    ctx = {
+        "case": req.GET.get("case", "")
+    }
+    return render(req, "bonita/consejo_evaluar.html", ctx)
+@csrf_exempt
+def obtener_datos_evaluacion_api(req: HttpRequest):
+    """
+    Lee la variable 'respuestasJson' del caso en Bonita.
+    Esta variable ya fue llenada por la tarea automática 'Buscar Respuestas'.
+    """
+    case_id = (req.GET.get("case") or _json(req).get("caseId") or "").strip()
+    if not case_id:
+        return JsonResponse({"error": "Falta caseId"}, status=400)
+
+    try:
+        cli = BonitaClient()
+        cli.login()
+        
+        # Leemos la variable donde el conector GET guardó la respuesta
+        var = cli.get_case_variable(case_id, "respuestasJson")
+        
+        lista = []
+        if var and "value" in var and var["value"]:
+            try:
+                lista = json.loads(var["value"])
+            except:
+                pass
+
+        return JsonResponse({"ok": True, "respuestas": lista})
+
+    except Exception as e:
+        return JsonResponse({"ok": False, "error": str(e)}, status=500)
+
+@csrf_exempt
+def enviar_evaluacion_consejo_api(req: HttpRequest):
+    """
+    Completa la tarea 'Evaluar Respuestas' en Bonita.
+    """
+    if req.method != "POST":
+        return JsonResponse({"error": "POST only"}, status=405)
+        
+    data = _json(req)
+    case_id = str(data.get("caseId") or "").strip()
+    obs_id = data.get("observacionId")
+    aprobada = bool(data.get("aprobada"))
+
+    if not case_id or not obs_id:
+        return JsonResponse({"ok": False, "error": "Faltan datos"}, status=400)
+
+    try:
+        cli = BonitaClient()
+        cli.login()
+        
+        assignee_username = getattr(settings, "BONITA_ASSIGNEE", "walter.bates")
+        user_id = cli.get_user_id_by_username(assignee_username)
+
+        # Buscar tarea
+        task = cli.wait_ready_task_in_case(case_id, "Evaluar Respuestas", timeout_sec=10)
+        if not task:
+             return JsonResponse({"ok": False, "error": "La tarea 'Evaluar Respuestas' no está lista."}, status=409)
+
+        # Ejecutar tarea
+        cli.assign_task(task["id"], user_id)
+        contract = {
+            "observacionId": int(obs_id),
+            "aprobada": aprobada
+        }
+        cli.execute_task(task["id"], contract)
+
+        return JsonResponse({"ok": True})
+
+    except Exception as e:
+        return JsonResponse({"ok": False, "error": str(e)}, status=500)
 # --------------------------- API: Iniciar proyecto ---------------------------
 
 @csrf_exempt
@@ -1061,7 +1139,7 @@ def enviar_observaciones_consejo_api(req: HttpRequest):
 
 
 @csrf_exempt
-def ver_observaciones_proyecto_api(req: HttpRequest):
+def ver_observaciones_proyecto_api(req: HttpRequest, proyecto_id: int):
     """
     Obtiene las observaciones de un proyecto específico.
     
@@ -1078,7 +1156,7 @@ def ver_observaciones_proyecto_api(req: HttpRequest):
     import requests
     
     case_id = (req.GET.get("case") or req.GET.get("caseId") or "").strip()
-    proyecto_id_raw = req.resolver_match.kwargs.get("proyecto_id")
+    proyecto_id_raw = proyecto_id
     
     if not case_id:
         return JsonResponse({"error": "Falta caseId/case"}, status=400)
@@ -1480,6 +1558,7 @@ def evaluar_propuestas_api(req: HttpRequest):
             status=500,
         )
 
+
 @csrf_exempt
 def resumen_proyecto_api(req: HttpRequest):
     """
@@ -1637,6 +1716,7 @@ def resumen_proyecto_api(req: HttpRequest):
                 "descripcion": desc,
                 "etapas": etapas,
                 "compromisosAceptados": compromisos_detalle,
+                "observacionPendiente": observacion_pendiente
             },
             status=200,
         )
@@ -1646,3 +1726,46 @@ def resumen_proyecto_api(req: HttpRequest):
             {"ok": False, "error": "Error consultando datos de monitoreo / Bonita", "detail": str(e)},
             status=500,
         )
+
+@csrf_exempt
+def responder_observacion_bonita_api(req: HttpRequest):
+    """
+    Ejecuta la tarea 'Monitorear ejecución' con accion='RESPONDER'.
+    """
+    if req.method != "POST":
+        return JsonResponse({"error": "POST only"}, status=405)
+
+    data = _json(req)
+    case_id = str(data.get("caseId") or "").strip()
+    obs_id = data.get("observacionId")
+    respuesta = str(data.get("respuesta") or "").strip()
+
+    if not case_id or not obs_id or not respuesta:
+        return JsonResponse({"ok": False, "error": "Datos incompletos"}, status=400)
+
+    try:
+        cli = BonitaClient()
+        cli.login()
+        
+        assignee_username = getattr(settings, "BONITA_ASSIGNEE", "walter.bates")
+        user_id = cli.get_user_id_by_username(assignee_username)
+
+        # Buscar tarea "Monitorear ejecución"
+        task = cli.wait_ready_task_in_case(case_id, "Monitorear ejecución / transparencia", timeout_sec=5)
+        
+        if not task:
+             return JsonResponse({"ok": False, "error": "La tarea de monitoreo no está lista."}, status=409)
+
+        # Ejecutar con acción RESPONDER
+        cli.assign_task(task["id"], user_id)
+        contract = {
+            "accion": "RESPONDER",
+            "observacionId": int(obs_id),
+            "respuesta": respuesta
+        }
+        cli.execute_task(task["id"], contract)
+
+        return JsonResponse({"ok": True, "caseId": case_id})
+
+    except Exception as e:
+        return JsonResponse({"ok": False, "error": str(e)}, status=500)
