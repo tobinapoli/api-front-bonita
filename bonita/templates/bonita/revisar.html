@@ -21,8 +21,12 @@
       <button id="btnCargar" class="btn btn-light btn-sm">Cargar desde Bonita</button>
     </div>
     <div class="card-body">
-      <div class="alert alert-info">
+      <div class="alert alert-info mb-3">
         Caso: <code id="caseOut">{{ request.GET.case }}</code>
+        <div class="small mt-2">
+          Esta vista muestra proyectos en <strong>planificación</strong> y <strong>ejecución</strong>.
+          Los proyectos <strong>finalizados</strong> no se muestran porque ya no admiten interacción.
+        </div>
       </div>
       <div id="panel"></div>
       <div id="msg" class="mt-3"></div>
@@ -43,53 +47,130 @@
     }
   })();
 
+  const panel = document.getElementById("panel");
+  const msg   = document.getElementById("msg");
+
+  function setMsg(html) {
+    msg.innerHTML = html || "";
+  }
+
+  function normalizarEstado(raw) {
+    if (!raw) return "";
+    return String(raw).trim().toLowerCase();
+  }
+
+  function etiquetaEstado(p) {
+    const e = normalizarEstado(p.estado);
+    if (e === "planificacion") return "En planificación";
+    if (e === "ejecucion")     return "En ejecución";
+    if (e === "finalizado")    return "Finalizado";
+    return "Estado desconocido";
+  }
+
+  function claseBadgeEstado(p) {
+    const e = normalizarEstado(p.estado);
+    if (e === "planificacion") return "bg-secondary";
+    if (e === "ejecucion")     return "bg-success";
+    if (e === "finalizado")    return "bg-dark";
+    return "bg-light text-dark";
+  }
+
+  function textoAccion(p) {
+    const e = normalizarEstado(p.estado);
+    if (e === "planificacion") {
+      return "Podés revisar los pedidos y ofrecer compromisos.";
+    }
+    if (e === "ejecucion") {
+      return "El proyecto está en ejecución: podés monitorear su avance.";
+    }
+    return "";
+  }
+
   async function cargar() {
+    setMsg("");
     const caseId = qp("case");
     if (!caseId) {
-      document.getElementById("panel").innerHTML =
+      panel.innerHTML =
         `<div class="alert alert-warning">No se recibió <b>case</b> en la URL.</div>`;
       return;
     }
+
     const res = await fetch(`/api/bonita/revisar/?case=${encodeURIComponent(caseId)}`);
     const j = await res.json();
+
     if (!res.ok || !j.ok) {
-      document.getElementById("panel").innerHTML =
+      panel.innerHTML =
         `<div class="alert alert-danger">Error: ${j.error || res.status}</div>`;
       return;
     }
-    const arr = j.proyectos || [];
-    if (arr.length === 0) {
-      document.getElementById("panel").innerHTML =
-        `<div class="alert alert-secondary">No hay proyectos disponibles.</div>`;
+
+    const lista = (j.proyectos || []).filter(
+      p => normalizarEstado(p.estado) !== "finalizado"
+    );
+
+    if (lista.length === 0) {
+      panel.innerHTML =
+        `<div class="alert alert-secondary">No hay proyectos en planificación o ejecución.</div>`;
       return;
     }
-    const html = arr.map(p => `
-      <div class="border rounded p-3 mb-2">
-        <div class="d-flex justify-content-between">
-          <div>
-            <h5 class="mb-1">${p.nombre || 'Proyecto'}</h5>
-            <div class="text-muted small">ID: ${p.id ?? '-'}</div>
-          </div>
+
+    const html = lista.map(p => {
+      const estado = normalizarEstado(p.estado);
+      const nombre = p.nombre || "Proyecto sin nombre";
+      const desc   = p.descripcion || "";
+      const idp    = p.id;
+
+      let botonHTML = "";
+
+      // En planificación → ver pedidos (ejecuta la tarea 'Revisar proyectos')
+      if (estado === "planificacion") {
+        botonHTML = `
           <button class="btn btn-sm btn-outline-primary"
-                  onclick="colaborar(${p.id})">
+                  onclick="verPedidos(${idp})">
             Ver pedidos
-          </button>
+          </button>`;
+      }
+
+      // En ejecución → monitoreo directo
+      if (estado === "ejecucion") {
+        botonHTML = `
+          <button class="btn btn-sm btn-outline-success"
+                  onclick="verMonitoreo(${idp})">
+            Monitorear
+          </button>`;
+      }
+
+      return `
+        <div class="border rounded p-3 mb-2">
+          <div class="d-flex justify-content-between align-items-start">
+            <div>
+              <h5 class="mb-1">${nombre}</h5>
+              <div class="text-muted small">ID: <strong>${idp}</strong></div>
+              <span class="badge ${claseBadgeEstado(p)}">${etiquetaEstado(p)}</span>
+            </div>
+            ${botonHTML}
+          </div>
+
+          ${desc ? `<p class="mt-2 mb-1">${desc}</p>` : ""}
+          <div class="small text-muted">${textoAccion(p)}</div>
         </div>
-        ${p.descripcion ? `<p class="mt-2 mb-0">${p.descripcion}</p>` : ""}
-      </div>
-    `).join("");
-    document.getElementById("panel").innerHTML = html;
+      `;
+    }).join("");
+
+    panel.innerHTML = html;
   }
 
-  async function colaborar(proyectoId) {
+  // Igual que la función "colaborar" vieja: ejecuta elegir-proyecto y va a ver pedidos
+  async function verPedidos(proyectoId) {
     const caseId = qp("case");
-    const rol = qp("rol") || "";
+    const rol    = qp("rol") || "red_ongs";
+
     if (!caseId) {
-      document.getElementById("msg").innerHTML =
-        `<div class="alert alert-warning">No se encontró caseId en la URL.</div>`;
+      setMsg(`<div class="alert alert-warning">No se encontró <b>caseId</b> en la URL.</div>`);
       return;
     }
-    document.getElementById("msg").innerHTML = "";
+
+    setMsg("");
 
     const res = await fetch("/api/bonita/elegir-proyecto/", {
       method: "POST",
@@ -99,8 +180,9 @@
 
     const j = await res.json();
     if (!res.ok || !j.ok) {
-      document.getElementById("msg").innerHTML =
-        `<div class="alert alert-danger">Error al seleccionar proyecto: ${j.error || res.status}</div>`;
+      setMsg(
+        `<div class="alert alert-danger">Error al seleccionar proyecto: ${j.error || res.status}</div>`
+      );
       return;
     }
 
@@ -109,10 +191,22 @@
     location.href = url;
   }
 
+  // Monitoreo: sólo navegar, sin tocar el flujo
+  function verMonitoreo(proyectoId) {
+    const caseId = qp("case");
+    if (!caseId) {
+      setMsg(`<div class="alert alert-warning">No se encontró <b>caseId</b> en la URL.</div>`);
+      return;
+    }
+    location.href =
+      `/bonita/monitoreo/?case=${encodeURIComponent(caseId)}&proyecto=${encodeURIComponent(proyectoId)}&rol=red_ongs`;
+  }
+
   document.getElementById("btnCargar").addEventListener("click", cargar);
   cargar();
 
-  window.colaborar = colaborar;
+  window.verPedidos   = verPedidos;
+  window.verMonitoreo = verMonitoreo;
 </script>
 </body>
 </html>

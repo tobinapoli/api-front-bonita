@@ -7,6 +7,7 @@ from django.conf import settings
 from django.http import JsonResponse, HttpRequest
 from django.shortcuts import render
 from django.views.decorators.csrf import csrf_exempt
+from .models import ProyectoMonitoreo
 
 from .bonita_client import BonitaClient
 from .validators import validate_iniciar_payload
@@ -234,6 +235,9 @@ def iniciar_proyecto_api(req: HttpRequest):
     Si no existe un caseId válido, instancia el proceso.
     Luego espera a que Bonita complete el conector que crea el proyecto
     y devuelve el ID de proyecto al frontend.
+
+    Además, guarda un snapshot del proyecto en la BD local (ProyectoMonitoreo)
+    usando el proyectoId devuelto por la API cloud.
     """
     if req.method != "POST":
         return JsonResponse({"error": "POST only"}, status=405)
@@ -342,6 +346,27 @@ def iniciar_proyecto_api(req: HttpRequest):
                         or obj.get("proyectoId")
                         or obj.get("id_proyecto")
                     )
+
+        # ---------- Guardar snapshot en la BD local ----------
+        try:
+            if proyecto_id not in (None, "", []):
+                try:
+                    pid_int = int(proyecto_id)
+                except (TypeError, ValueError):
+                    pid_int = None
+
+                if pid_int is not None:
+                    ProyectoMonitoreo.objects.update_or_create(
+                        proyecto_id=pid_int,
+                        defaults={
+                            "nombre": str(data.get("nombre") or ""),
+                            "descripcion": str(data.get("descripcion") or ""),
+                            "plan_trabajo": data.get("planTrabajo") or {},
+                        },
+                    )
+        except Exception:
+            # No romper el flujo si falla sólo el snapshot
+            pass
 
         return JsonResponse(
             {
@@ -1192,7 +1217,8 @@ def revisar_compromisos_api(req: HttpRequest):
 def _append_compromiso_aceptado(cli: BonitaClient, case_id: str, compromiso_id: int | None):
     """
     Agrega el compromiso aceptado al arreglo JSON 'compromisosAceptadosJson'
-    de la instancia de proceso en Bonita.
+    de la instancia de proceso en Bonita y sincroniza ese arreglo
+    con la tabla ProyectoMonitoreo en la BD local.
 
     Guarda un diccionario con:
       - id
@@ -1204,7 +1230,7 @@ def _append_compromiso_aceptado(cli: BonitaClient, case_id: str, compromiso_id: 
     if not compromiso_id:
         return
 
-    # ----- Leer historial actual -----
+    # ----- Leer historial actual desde Bonita -----
     try:
         var = cli.get_case_variable(case_id, "compromisosAceptadosJson")
         raw = (var.get("value") or "").strip() if var else ""
@@ -1245,7 +1271,6 @@ def _append_compromiso_aceptado(cli: BonitaClient, case_id: str, compromiso_id: 
                             "id": compromiso_id,
                             "detalle": c.get("detalle", ""),
                             "fecha": c.get("fecha", ""),
-                            # estado base (luego lo pisamos con el final)
                             "estado": c.get("estado", ""),
                         }
                         break
@@ -1276,14 +1301,13 @@ def _append_compromiso_aceptado(cli: BonitaClient, case_id: str, compromiso_id: 
                 if cid_resp == compromiso_id and obj.get("estado"):
                     final_state = str(obj["estado"])
     except Exception:
-        # si falla, nos quedamos con "cumplido"
-        pass
+        pass  # si falla, nos quedamos con "cumplido"
 
     nuevo["estado"] = final_state
 
     lista.append(nuevo)
 
-    # ----- Guardar de nuevo en la variable de caso -----
+    # ----- Guardar de nuevo en la variable de caso en Bonita -----
     try:
         cli.update_case_variable(
             case_id,
@@ -1291,7 +1315,28 @@ def _append_compromiso_aceptado(cli: BonitaClient, case_id: str, compromiso_id: 
             json.dumps(lista, ensure_ascii=False),
         )
     except Exception:
-        # No rompemos el flujo si falla el tracking
+        # No rompemos el flujo si falla el tracking en Bonita
+        pass
+
+    # ----- Sincronizar también en ProyectoMonitoreo -----
+    try:
+        var_pid = cli.get_case_variable(case_id, "proyectoId")
+        pid_raw = (var_pid.get("value") or "").strip() if var_pid else ""
+        if pid_raw:
+            try:
+                proj_id = int(pid_raw)
+            except ValueError:
+                proj_id = None
+
+            if proj_id is not None:
+                snap, _ = ProyectoMonitoreo.objects.get_or_create(
+                    proyecto_id=proj_id,
+                    defaults={"nombre": "", "descripcion": "", "plan_trabajo": {}},
+                )
+                snap.compromisos_aceptados = lista
+                snap.save(update_fields=["compromisos_aceptados", "actualizado_en"])
+    except Exception:
+        # Tampoco rompemos el flujo si falla sólo la sincronización local
         pass
 
 
@@ -1438,10 +1483,16 @@ def evaluar_propuestas_api(req: HttpRequest):
 @csrf_exempt
 def resumen_proyecto_api(req: HttpRequest):
     """
-    Devuelve un resumen del proyecto para el monitoreo:
-      - nombreProyecto, descripcion
-      - etapas del plan de trabajo
-      - compromisos aceptados (por objetos guardados en compromisosAceptadosJson)
+    Devuelve un resumen del proyecto para el monitoreo.
+
+    Estrategia híbrida:
+      1) Si viene proyectoId y hay snapshot en ProyectoMonitoreo, se usa ESO.
+      2) Si no hay snapshot (o no hay proyectoId), se vuelve al comportamiento
+         original leyendo todo desde las variables de caso de Bonita:
+           - proyectoNombre
+           - descripcion
+           - planTrabajo
+           - compromisosAceptadosJson
     """
     case_id = (req.GET.get("case") or _json(req).get("caseId") or "").strip()
     proyecto_raw = req.GET.get("proyecto") or _json(req).get("proyectoId")
@@ -1449,6 +1500,7 @@ def resumen_proyecto_api(req: HttpRequest):
     if not case_id:
         return JsonResponse({"ok": False, "error": "Falta caseId/case"}, status=400)
 
+    # proyectoId AHORA ES OPCIONAL: si no viene, usamos sólo Bonita (modo viejo)
     try:
         proyecto_id = int(proyecto_raw) if proyecto_raw not in (None, "", []) else None
     except (TypeError, ValueError):
@@ -1458,65 +1510,123 @@ def resumen_proyecto_api(req: HttpRequest):
         cli = BonitaClient()
         cli.login()
 
+        # Valores por defecto
         nombre = ""
         desc = ""
         etapas: list[dict[str, Any]] = []
+        compromisos_detalle: list[dict[str, Any]] = []
 
-        v_nombre = cli.get_case_variable(case_id, "proyectoNombre")
-        if v_nombre and "value" in v_nombre:
-            nombre = (v_nombre["value"] or "").strip()
-
-        v_desc = cli.get_case_variable(case_id, "descripcion")
-        if v_desc and "value" in v_desc:
-            desc = (v_desc["value"] or "").strip()
-
-        v_plan = cli.get_case_variable(case_id, "planTrabajo")
-        if v_plan and "value" in v_plan and (v_plan["value"] or "").strip():
+        # ------------------ 1) Intentar leer snapshot local si hay proyecto_id ------------------
+        snap = None
+        if proyecto_id is not None:
             try:
-                plan = json.loads(v_plan["value"])
-                if isinstance(plan, dict) and "etapas" in plan:
-                    etapas = plan["etapas"]
-            except Exception:
+                snap = ProyectoMonitoreo.objects.get(proyecto_id=proyecto_id)
+            except ProyectoMonitoreo.DoesNotExist:
+                snap = None
+
+        if snap is not None:
+            # --- Usamos datos del snapshot ---
+            nombre = snap.nombre or ""
+            desc = snap.descripcion or ""
+
+            plan = snap.plan_trabajo or {}
+            if isinstance(plan, dict):
+                etapas = plan.get("etapas") or []
+                if not isinstance(etapas, list):
+                    etapas = []
+            else:
                 etapas = []
 
-        # Leer compromisos aceptados de forma robusta (maneja "null", etc.)
-        compromisos_detalle: list[dict[str, Any]] = []
-        v_hist = cli.get_case_variable(case_id, "compromisosAceptadosJson")
-        if v_hist and "value" in v_hist:
-            raw_hist = (v_hist["value"] or "").strip()
-            if raw_hist:
-                try:
-                    parsed = json.loads(raw_hist)
-                except Exception:
-                    parsed = None
+            compromisos = snap.compromisos_aceptados or []
 
-                if isinstance(parsed, list):
-                    # Caso nuevo: ya guardamos diccionarios con id/detalle/fecha/estado
-                    if parsed and all(isinstance(x, dict) for x in parsed):
-                        compromisos_detalle = [
+            if isinstance(compromisos, list):
+                for x in compromisos:
+                    if isinstance(x, dict):
+                        cid = x.get("id")
+                        try:
+                            cid_int = int(cid)
+                        except Exception:
+                            cid_int = cid
+                        compromisos_detalle.append(
                             {
-                                "id": int(x.get("id")) if str(x.get("id")).isdigit() else x.get("id"),
+                                "id": cid_int,
                                 "detalle": x.get("detalle", ""),
                                 "fecha": x.get("fecha", ""),
                                 "estado": x.get("estado", ""),
                             }
-                            for x in parsed
-                        ]
-                    # Caso viejo: era una lista de IDs -> armamos objetos mínimos vacíos
-                    elif parsed and all(isinstance(x, (int, str)) for x in parsed):
-                        for cid in parsed:
-                            try:
-                                cid_int = int(cid)
-                            except Exception:
-                                cid_int = cid
-                            compromisos_detalle.append(
+                        )
+                    else:
+                        # Caso raro: lista de ints/strings
+                        try:
+                            cid_int = int(x)
+                        except Exception:
+                            cid_int = x
+                        compromisos_detalle.append(
+                            {
+                                "id": cid_int,
+                                "detalle": "",
+                                "fecha": "",
+                                "estado": "",
+                            }
+                        )
+
+        # ------------------ 2) Si NO hay snapshot, usar comportamiento viejo (Bonita) ------------------
+        if snap is None:
+            # nombre y descripción desde variables de caso de Bonita
+            v_nombre = cli.get_case_variable(case_id, "proyectoNombre")
+            if v_nombre and "value" in v_nombre:
+                nombre = (v_nombre["value"] or "").strip()
+
+            v_desc = cli.get_case_variable(case_id, "descripcion")
+            if v_desc and "value" in v_desc:
+                desc = (v_desc["value"] or "").strip()
+
+            v_plan = cli.get_case_variable(case_id, "planTrabajo")
+            if v_plan and "value" in v_plan and (v_plan["value"] or "").strip():
+                try:
+                    plan = json.loads(v_plan["value"])
+                    if isinstance(plan, dict) and "etapas" in plan:
+                        etapas = plan["etapas"]
+                except Exception:
+                    etapas = []
+
+            # Leer compromisos aceptados tal como antes, desde 'compromisosAceptadosJson'
+            v_hist = cli.get_case_variable(case_id, "compromisosAceptadosJson")
+            if v_hist and "value" in v_hist:
+                raw_hist = (v_hist["value"] or "").strip()
+                if raw_hist:
+                    try:
+                        parsed = json.loads(raw_hist)
+                    except Exception:
+                        parsed = None
+
+                    if isinstance(parsed, list):
+                        # Caso nuevo: ya guardamos diccionarios con id/detalle/fecha/estado
+                        if parsed and all(isinstance(x, dict) for x in parsed):
+                            compromisos_detalle = [
                                 {
-                                    "id": cid_int,
-                                    "detalle": "",
-                                    "fecha": "",
-                                    "estado": "",
+                                    "id": int(x.get("id")) if str(x.get("id")).isdigit() else x.get("id"),
+                                    "detalle": x.get("detalle", ""),
+                                    "fecha": x.get("fecha", ""),
+                                    "estado": x.get("estado", ""),
                                 }
-                            )
+                                for x in parsed
+                            ]
+                        # Caso viejo: era una lista de IDs -> armamos objetos mínimos vacíos
+                        elif parsed and all(isinstance(x, (int, str)) for x in parsed):
+                            for cid in parsed:
+                                try:
+                                    cid_int = int(cid)
+                                except Exception:
+                                    cid_int = cid
+                                compromisos_detalle.append(
+                                    {
+                                        "id": cid_int,
+                                        "detalle": "",
+                                        "fecha": "",
+                                        "estado": "",
+                                    }
+                                )
 
         return JsonResponse(
             {
@@ -1533,6 +1643,6 @@ def resumen_proyecto_api(req: HttpRequest):
 
     except Exception as e:
         return JsonResponse(
-            {"ok": False, "error": "Error consultando Bonita / API", "detail": str(e)},
+            {"ok": False, "error": "Error consultando datos de monitoreo / Bonita", "detail": str(e)},
             status=500,
         )

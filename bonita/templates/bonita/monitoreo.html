@@ -83,11 +83,11 @@
     return new URLSearchParams(location.search).get(n);
   }
 
-  const msg = document.getElementById("msg");
-  const pNombre = document.getElementById("pNombre");
-  const pDescripcion = document.getElementById("pDescripcion");
-  const tablaEtapas = document.getElementById("tablaEtapas");
-  const listaCompromisos = document.getElementById("listaCompromisos");
+  const msg               = document.getElementById("msg");
+  const pNombre           = document.getElementById("pNombre");
+  const pDescripcion      = document.getElementById("pDescripcion");
+  const tablaEtapas       = document.getElementById("tablaEtapas");
+  const listaCompromisos  = document.getElementById("listaCompromisos");
   const btnVolverProyecto = document.getElementById("btnVolverProyecto");
 
   function setMsg(html) {
@@ -95,18 +95,30 @@
   }
 
   async function cargarResumen() {
-    const caseId = qp("case");
+    const caseId     = qp("case");
     const proyectoId = qp("proyecto");
+    const rol        = qp("rol") || "";
 
     if (!caseId || !proyectoId) {
       setMsg('<div class="alert alert-warning">Faltan parámetros <b>case</b> o <b>proyecto</b> en la URL.</div>');
       return;
     }
 
-    btnVolverProyecto.href = `/bonita/evaluar/?case=${encodeURIComponent(caseId)}&proyecto=${encodeURIComponent(proyectoId)}&rol=ong_originante`;
+    // Configurar botón según rol
+    if (rol === "red_ongs") {
+      btnVolverProyecto.textContent = "Volver a proyectos";
+      btnVolverProyecto.href =
+        `/bonita/revisar/?case=${encodeURIComponent(caseId)}&rol=red_ongs`;
+    } else {
+      btnVolverProyecto.textContent = "Volver al proyecto";
+      btnVolverProyecto.href =
+        `/bonita/evaluar/?case=${encodeURIComponent(caseId)}&proyecto=${encodeURIComponent(proyectoId)}&rol=ong_originante`;
+    }
 
     try {
-      const res = await fetch(`/api/bonita/resumen-proyecto/?case=${encodeURIComponent(caseId)}&proyecto=${encodeURIComponent(proyectoId)}`);
+      const res = await fetch(
+        `/api/bonita/resumen-proyecto/?case=${encodeURIComponent(caseId)}&proyecto=${encodeURIComponent(proyectoId)}`
+      );
       const j = await res.json();
 
       if (!res.ok || j.ok === false) {
@@ -114,12 +126,13 @@
         return;
       }
 
-      pNombre.textContent = j.nombreProyecto || "-";
+      pNombre.textContent      = j.nombreProyecto || "-";
       pDescripcion.textContent = j.descripcion || "-";
 
       const etapas = j.etapas || [];
       if (!etapas.length) {
-        tablaEtapas.innerHTML = '<tr><td colspan="3" class="text-muted">Sin etapas registradas.</td></tr>';
+        tablaEtapas.innerHTML =
+          '<tr><td colspan="3" class="text-muted">Sin etapas registradas.</td></tr>';
       } else {
         tablaEtapas.innerHTML = etapas.map(e => `
           <tr>
