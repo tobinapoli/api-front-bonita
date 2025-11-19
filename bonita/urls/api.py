@@ -1,3 +1,5 @@
+# api/bonita/urls.py  (endpoints API)
+
 from django.urls import path
 from bonita.views import (
     login_api,
@@ -14,7 +16,7 @@ from bonita.views import (
     ver_observaciones_proyecto_api,
     revisar_compromisos_api,
     evaluar_propuestas_api,
-    
+    resumen_proyecto_api,
 )
 
 urlpatterns = [
@@ -31,11 +33,18 @@ urlpatterns = [
     ),
     path("compromiso/",      registrar_compromiso_api,     name="bonita_compromiso_api"),
     path("next-step/",       next_step_api,                name="bonita_next_step"),
-    
+
     # Consejo Directivo
     path("consejo/proyectos/", obtener_proyectos_en_ejecucion_api, name="bonita_consejo_proyectos"),
-    path("consejo/proyectos/<int:proyecto_id>/observaciones/", ver_observaciones_proyecto_api, name="bonita_ver_observaciones"),
+    path(
+        "consejo/proyectos/<int:proyecto_id>/observaciones/",
+        ver_observaciones_proyecto_api,
+        name="bonita_ver_observaciones",
+    ),
     path("consejo/observaciones/", enviar_observaciones_consejo_api, name="bonita_consejo_observaciones"),
-    path("revisar-compromisos/", revisar_compromisos_api),
-    path("evaluar-propuestas/", evaluar_propuestas_api),
+
+    # Evaluar propuestas / monitoreo
+    path("revisar-compromisos/", revisar_compromisos_api,  name="bonita_revisar_compromisos"),
+    path("evaluar-propuestas/",  evaluar_propuestas_api,   name="bonita_evaluar_propuestas"),
+    path("resumen-proyecto/",    resumen_proyecto_api,     name="bonita_resumen_proyecto"),
 ]

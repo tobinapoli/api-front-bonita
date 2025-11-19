@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Monitoreo del proyecto</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body class="bg-light">
+
+<nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+  <div class="container">
+    <a class="navbar-brand" href="/bonita/login/">ProjectPlanning</a>
+  </div>
+</nav>
+
+<div class="container py-4" style="max-width:960px">
+  <div class="card shadow-sm">
+    <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+      <h4 class="mb-0">Monitoreo del proyecto</h4>
+      <div class="text-end small">
+        {% if case %}
+          <div>Caso: <code>{{ case }}</code></div>
+        {% endif %}
+        {% if proyecto %}
+          <div>Proyecto: <code>{{ proyecto }}</code></div>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="card-body">
+      <div id="msg" class="mb-3"></div>
+
+      <section class="mb-4">
+        <h5>Información del proyecto</h5>
+        <div class="border rounded p-3 bg-light">
+          <p class="mb-1"><strong>Nombre:</strong> <span id="pNombre">-</span></p>
+          <p class="mb-1"><strong>Descripción:</strong> <span id="pDescripcion">-</span></p>
+        </div>
+      </section>
+
+      <section class="mb-4">
+        <h5>Plan de trabajo</h5>
+        <div class="table-responsive">
+          <table class="table table-sm table-striped align-middle">
+            <thead>
+              <tr>
+                <th>Etapa</th>
+                <th>Fecha inicio</th>
+                <th>Fecha fin</th>
+              </tr>
+            </thead>
+            <tbody id="tablaEtapas">
+              <tr><td colspan="3" class="text-muted">Sin etapas registradas.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section>
+        <h5>Compromisos aceptados</h5>
+        <div id="listaCompromisos">
+          <div class="alert alert-secondary mb-0">
+            Todavía no hay compromisos aceptados registrados en este proyecto.
+          </div>
+        </div>
+      </section>
+
+      <div class="mt-4 d-flex justify-content-between">
+        <a href="/bonita/login/" class="btn btn-outline-secondary btn-sm">
+          Volver al inicio
+        </a>
+        <a id="btnVolverProyecto" href="#" class="btn btn-outline-primary btn-sm">
+          Volver al proyecto
+        </a>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  function qp(n) {
+    return new URLSearchParams(location.search).get(n);
+  }
+
+  const msg = document.getElementById("msg");
+  const pNombre = document.getElementById("pNombre");
+  const pDescripcion = document.getElementById("pDescripcion");
+  const tablaEtapas = document.getElementById("tablaEtapas");
+  const listaCompromisos = document.getElementById("listaCompromisos");
+  const btnVolverProyecto = document.getElementById("btnVolverProyecto");
+
+  function setMsg(html) {
+    msg.innerHTML = html || "";
+  }
+
+  async function cargarResumen() {
+    const caseId = qp("case");
+    const proyectoId = qp("proyecto");
+
+    if (!caseId || !proyectoId) {
+      setMsg('<div class="alert alert-warning">Faltan parámetros <b>case</b> o <b>proyecto</b> en la URL.</div>');
+      return;
+    }
+
+    btnVolverProyecto.href = `/bonita/evaluar/?case=${encodeURIComponent(caseId)}&proyecto=${encodeURIComponent(proyectoId)}&rol=ong_originante`;
+
+    try {
+      const res = await fetch(`/api/bonita/resumen-proyecto/?case=${encodeURIComponent(caseId)}&proyecto=${encodeURIComponent(proyectoId)}`);
+      const j = await res.json();
+
+      if (!res.ok || j.ok === false) {
+        setMsg(`<div class="alert alert-danger">Error al cargar el resumen: ${j.error || res.status}</div>`);
+        return;
+      }
+
+      pNombre.textContent = j.nombreProyecto || "-";
+      pDescripcion.textContent = j.descripcion || "-";
+
+      const etapas = j.etapas || [];
+      if (!etapas.length) {
+        tablaEtapas.innerHTML = '<tr><td colspan="3" class="text-muted">Sin etapas registradas.</td></tr>';
+      } else {
+        tablaEtapas.innerHTML = etapas.map(e => `
+          <tr>
+            <td>${e.nombre || "-"}</td>
+            <td>${e.fechaInicioPrevista || "-"}</td>
+            <td>${e.fechaFinPrevista || "-"}</td>
+          </tr>
+        `).join("");
+      }
+
+      const compromisos = j.compromisosAceptados || [];
+      if (!compromisos.length) {
+        listaCompromisos.innerHTML = `
+          <div class="alert alert-secondary mb-0">
+            Todavía no hay compromisos aceptados registrados en este proyecto.
+          </div>`;
+      } else {
+        const html = compromisos.map(c => `
+          <div class="border rounded p-3 mb-2">
+            <div class="d-flex justify-content-between align-items-center">
+              <div>
+                <strong>Compromiso #${c.id}</strong>
+                <div class="small text-muted mt-1">
+                  ${c.detalle ? `${c.detalle}<br>` : ""}
+                  ${c.fecha ? `Fecha: <strong>${c.fecha}</strong><br>` : ""}
+                  Estado: <strong>${c.estado || "-"}</strong>
+                </div>
+              </div>
+            </div>
+          </div>
+        `).join("");
+
+        listaCompromisos.innerHTML = html;
+      }
+
+      setMsg("");
+
+    } catch (e) {
+      setMsg('<div class="alert alert-danger">Error de red al cargar el resumen.</div>');
+    }
+  }
+
+  cargarResumen();
+</script>
+
+</body>
+</html>

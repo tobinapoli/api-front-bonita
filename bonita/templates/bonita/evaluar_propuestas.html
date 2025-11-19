@@ -43,14 +43,16 @@
         </a>
 
         <div class="d-flex gap-2">
-          <!-- Botón que manda volverAEvaluar = true -->
           <button id="btnVolverEvaluar" class="btn btn-outline-primary btn-sm" type="button">
             Volver a evaluar
           </button>
 
-          <!-- Botón que confirma selección (volverAEvaluar = false) -->
           <button id="btnConfirmar" class="btn btn-success btn-sm" type="button">
             Confirmar selección
+          </button>
+
+          <button id="btnConfirmarEjecutar" class="btn btn-warning btn-sm" type="button">
+            Confirmar y pasar a ejecución
           </button>
         </div>
       </div>
@@ -69,12 +71,12 @@
   const msg   = document.getElementById("msg");
   const btnVolver   = document.getElementById("btnVolverEvaluar");
   const btnConfirm  = document.getElementById("btnConfirmar");
+  const btnConfirmEj = document.getElementById("btnConfirmarEjecutar");
 
   function setMsg(html) {
     msg.innerHTML = html || "";
   }
 
-  // ----- Render de compromisos -----
   function renderCompromisos(lista) {
     if (!lista || lista.length === 0) {
       panel.innerHTML = `
@@ -113,7 +115,7 @@
 
             <button type="button"
                     class="btn btn-sm btn-outline-success"
-                    onclick="aceptarCompromisoDesdeCard(${c.id})">
+                    onclick="aceptarCompromisoDesdeCard(${c.id}, false)">
               Aceptar
             </button>
           </div>
@@ -127,7 +129,6 @@
     `;
   }
 
-  // ----- Carga de compromisos desde la API -----
   async function cargarCompromisos() {
     setMsg("");
     const caseId = qp("case");
@@ -159,21 +160,17 @@
     return radio ? parseInt(radio.value, 10) : null;
   }
 
-  // Aceptar desde el botón de la tarjeta
-  function aceptarCompromisoDesdeCard(id) {
+  function aceptarCompromisoDesdeCard(id, finalizarPlan) {
     const radio = document.getElementById(`comp_${id}`);
     if (radio) {
       radio.checked = true;
     }
-    // Reutiliza el mismo flujo de "Confirmar selección"
-    enviarEvaluacion(false);
+    enviarEvaluacion(false, finalizarPlan);
   }
 
-  // Exponerla al scope global para el onclick del HTML
   window.aceptarCompromisoDesdeCard = aceptarCompromisoDesdeCard;
 
-  // ----- Enviar decisión a la API -----
-  async function enviarEvaluacion(volverAEvaluar) {
+  async function enviarEvaluacion(volverAEvaluar, finalizarPlan) {
     setMsg("");
     const caseId     = qp("case");
     const proyectoId = qp("proyecto");
@@ -185,7 +182,6 @@
 
     const compId = obtenerCompromisoSeleccionado();
 
-    // Si NO quiere volver a evaluar y tampoco eligió compromiso, avisamos
     if (!volverAEvaluar && !compId) {
       setMsg(`
         <div class="alert alert-warning">
@@ -197,6 +193,7 @@
 
     btnVolver.disabled  = true;
     btnConfirm.disabled = true;
+    btnConfirmEj.disabled = true;
 
     try {
       const res = await fetch("/api/bonita/evaluar-propuestas/", {
@@ -206,7 +203,8 @@
           caseId: caseId,
           proyectoId: proyectoId ? parseInt(proyectoId, 10) : null,
           compromisoIdSeleccionado: compId,
-          volverAEvaluar: volverAEvaluar
+          volverAEvaluar: volverAEvaluar,
+          finalizarPlan: !!finalizarPlan
         })
       });
 
@@ -225,21 +223,22 @@
           <div class="alert alert-success">
             Recargando página...
           </div>`);
-
-        // Dejá que Bonita vuelva a poner la tarea "Evaluar propuestas" en ready
+        setTimeout(() => { location.reload(); }, 1000);
+      } else if (finalizarPlan) {
+        setMsg(`
+          <div class="alert alert-success">
+            El compromiso fue aceptado y el plan se marcó como completo.
+            Bonita va a continuar el flujo hacia la etapa de ejecución.
+          </div>`);
         setTimeout(() => {
-          location.reload();
+          location.href = `/bonita/monitoreo/?case=${encodeURIComponent(caseId)}&proyecto=${encodeURIComponent(proyectoId || "")}`;
         }, 1000);
       } else {
         setMsg(`
           <div class="alert alert-success">
             Evaluación guardada correctamente. El flujo continuará con el compromiso seleccionado.
           </div>`);
-
-        // Volver a leer compromisosJson, que ya tiene el estado actualizado ("cumplido")
-        setTimeout(() => {
-          cargarCompromisos();
-        }, 800);
+        setTimeout(() => { cargarCompromisos(); }, 800);
       }
 
     } catch (e) {
@@ -250,11 +249,13 @@
     } finally {
       btnVolver.disabled  = false;
       btnConfirm.disabled = false;
+      btnConfirmEj.disabled = false;
     }
   }
 
-  btnVolver.addEventListener("click", () => enviarEvaluacion(true));
-  btnConfirm.addEventListener("click", () => enviarEvaluacion(false));
+  btnVolver.addEventListener("click", () => enviarEvaluacion(true, false));
+  btnConfirm.addEventListener("click", () => enviarEvaluacion(false, false));
+  btnConfirmEj.addEventListener("click", () => enviarEvaluacion(false, true));
 
   cargarCompromisos();
 </script>

@@ -87,6 +87,14 @@ def evaluar_propuestas_page(req: HttpRequest):
     }
     return render(req, "bonita/evaluar_propuestas.html", ctx)
 
+
+def monitoreo_proyecto_page(req: HttpRequest):
+    ctx = {
+        "case": req.GET.get("case", ""),
+        "proyecto": req.GET.get("proyecto", ""),
+    }
+    return render(req, "bonita/monitoreo.html", ctx)
+
 # --------------------------- Helpers ---------------------------
 
 def _json(req: HttpRequest) -> Dict[str, Any]:
@@ -1181,6 +1189,115 @@ def revisar_compromisos_api(req: HttpRequest):
         )
 
 
+def _append_compromiso_aceptado(cli: BonitaClient, case_id: str, compromiso_id: int | None):
+    """
+    Agrega el compromiso aceptado al arreglo JSON 'compromisosAceptadosJson'
+    de la instancia de proceso en Bonita.
+
+    Guarda un diccionario con:
+      - id
+      - detalle
+      - fecha
+      - estado  => tomando el valor final desde body_compromiso_cumplido
+                   (o 'cumplido' por defecto).
+    """
+    if not compromiso_id:
+        return
+
+    # ----- Leer historial actual -----
+    try:
+        var = cli.get_case_variable(case_id, "compromisosAceptadosJson")
+        raw = (var.get("value") or "").strip() if var else ""
+    except Exception:
+        raw = ""
+
+    lista: list[Any] = []
+    if raw:
+        try:
+            parsed = json.loads(raw)
+            if isinstance(parsed, list):
+                lista = parsed
+        except Exception:
+            lista = []
+
+    # Evitar duplicados (tanto si son ints como dicts)
+    for item in lista:
+        if isinstance(item, dict) and item.get("id") == compromiso_id:
+            return
+        if isinstance(item, int) and item == compromiso_id:
+            return
+
+    # ----- Sacar detalle/fecha/estado base desde compromisosJson -----
+    nuevo: dict[str, Any] | None = None
+    try:
+        var_comp = cli.get_case_variable(case_id, "compromisosJson")
+        raw_comp = (var_comp.get("value") or "").strip() if var_comp else ""
+        if raw_comp:
+            comps = json.loads(raw_comp)
+            if isinstance(comps, list):
+                for c in comps:
+                    try:
+                        cid = int(c.get("id"))
+                    except Exception:
+                        continue
+                    if cid == compromiso_id:
+                        nuevo = {
+                            "id": compromiso_id,
+                            "detalle": c.get("detalle", ""),
+                            "fecha": c.get("fecha", ""),
+                            # estado base (luego lo pisamos con el final)
+                            "estado": c.get("estado", ""),
+                        }
+                        break
+    except Exception:
+        nuevo = None
+
+    if nuevo is None:
+        nuevo = {
+            "id": compromiso_id,
+            "detalle": "",
+            "fecha": "",
+            "estado": "",
+        }
+
+    # ----- Tomar el estado FINAL desde body_compromiso_cumplido -----
+    final_state = "cumplido"  # por defecto, porque ya está aceptado
+    try:
+        var_cc = cli.get_case_variable(case_id, "body_compromiso_cumplido")
+        raw_cc = (var_cc.get("value") or "").strip() if var_cc else ""
+        if raw_cc:
+            obj = json.loads(raw_cc)
+            if isinstance(obj, dict):
+                cid_resp = obj.get("compromisoId")
+                try:
+                    cid_resp = int(cid_resp)
+                except Exception:
+                    pass
+                if cid_resp == compromiso_id and obj.get("estado"):
+                    final_state = str(obj["estado"])
+    except Exception:
+        # si falla, nos quedamos con "cumplido"
+        pass
+
+    nuevo["estado"] = final_state
+
+    lista.append(nuevo)
+
+    # ----- Guardar de nuevo en la variable de caso -----
+    try:
+        cli.update_case_variable(
+            case_id,
+            "compromisosAceptadosJson",
+            json.dumps(lista, ensure_ascii=False),
+        )
+    except Exception:
+        # No rompemos el flujo si falla el tracking
+        pass
+
+
+
+
+
 # --------------------------- API: Ejecutar 'Evaluar propuestas' --------------
 
 
@@ -1194,7 +1311,7 @@ def evaluar_propuestas_api(req: HttpRequest):
     proyecto_raw = data.get("proyectoId")
     comp_raw = data.get("compromisoIdSeleccionado")
     volver_raw = data.get("volverAEvaluar")
-    finalizar_raw = data.get("finalizarPlan")  # viene del botón "Aceptar y finalizar"
+    finalizar_raw = data.get("finalizarPlan")  # viene del botón "Confirmar y pasar a ejecución"
 
     if not case_id:
         return JsonResponse({"ok": False, "error": "Falta caseId"}, status=400)
@@ -1227,7 +1344,7 @@ def evaluar_propuestas_api(req: HttpRequest):
         return False
 
     volver = _to_bool(volver_raw)
-    finalizar = _to_bool(finalizar_raw)  # solo importa cuando se auto-ejecuta "Acumular..."
+    finalizar = _to_bool(finalizar_raw)
 
     # Si no quiere volver a evaluar, tiene que haber un compromiso elegido
     if not volver and not comp_str:
@@ -1277,7 +1394,6 @@ def evaluar_propuestas_api(req: HttpRequest):
                 status=200,
             )
 
-        # Importante: el contrato de esta tarea SOLO tiene compromisoIdSeleccionado y volverAEvaluar
         contract_payload = {
             "compromisoIdSeleccionado": comp_str,
             "volverAEvaluar": volver,
@@ -1287,7 +1403,7 @@ def evaluar_propuestas_api(req: HttpRequest):
         cli.execute_task(task["id"], contract_payload)
 
         # 2) Si NO es "volver a evaluar" y hay compromiso elegido,
-        # auto-ejecutamos "Acumular compromiso en el plan"
+        # auto-ejecutamos "Acumular compromiso en el plan" y lo guardamos en el histórico
         if not volver and comp_str:
             task2 = cli.wait_ready_task_in_case(
                 case_id,
@@ -1296,9 +1412,10 @@ def evaluar_propuestas_api(req: HttpRequest):
             )
             if task2:
                 cli.assign_task(task2["id"], user_id)
-                # acá va el contrato correcto de esa tarea:
-                # tiene una entrada 'finalizarPlan' que en Operaciones copia a etapasCubiertas
                 cli.execute_task(task2["id"], {"finalizarPlan": finalizar})
+
+            # registrar el compromiso como aceptado en el array
+            _append_compromiso_aceptado(cli, case_id, comp_id)
 
         return JsonResponse(
             {
@@ -1315,5 +1432,107 @@ def evaluar_propuestas_api(req: HttpRequest):
     except Exception as e:
         return JsonResponse(
             {"ok": False, "error": "Error integrando con Bonita", "detail": str(e)},
+            status=500,
+        )
+
+@csrf_exempt
+def resumen_proyecto_api(req: HttpRequest):
+    """
+    Devuelve un resumen del proyecto para el monitoreo:
+      - nombreProyecto, descripcion
+      - etapas del plan de trabajo
+      - compromisos aceptados (por objetos guardados en compromisosAceptadosJson)
+    """
+    case_id = (req.GET.get("case") or _json(req).get("caseId") or "").strip()
+    proyecto_raw = req.GET.get("proyecto") or _json(req).get("proyectoId")
+
+    if not case_id:
+        return JsonResponse({"ok": False, "error": "Falta caseId/case"}, status=400)
+
+    try:
+        proyecto_id = int(proyecto_raw) if proyecto_raw not in (None, "", []) else None
+    except (TypeError, ValueError):
+        proyecto_id = None
+
+    try:
+        cli = BonitaClient()
+        cli.login()
+
+        nombre = ""
+        desc = ""
+        etapas: list[dict[str, Any]] = []
+
+        v_nombre = cli.get_case_variable(case_id, "proyectoNombre")
+        if v_nombre and "value" in v_nombre:
+            nombre = (v_nombre["value"] or "").strip()
+
+        v_desc = cli.get_case_variable(case_id, "descripcion")
+        if v_desc and "value" in v_desc:
+            desc = (v_desc["value"] or "").strip()
+
+        v_plan = cli.get_case_variable(case_id, "planTrabajo")
+        if v_plan and "value" in v_plan and (v_plan["value"] or "").strip():
+            try:
+                plan = json.loads(v_plan["value"])
+                if isinstance(plan, dict) and "etapas" in plan:
+                    etapas = plan["etapas"]
+            except Exception:
+                etapas = []
+
+        # Leer compromisos aceptados de forma robusta (maneja "null", etc.)
+        compromisos_detalle: list[dict[str, Any]] = []
+        v_hist = cli.get_case_variable(case_id, "compromisosAceptadosJson")
+        if v_hist and "value" in v_hist:
+            raw_hist = (v_hist["value"] or "").strip()
+            if raw_hist:
+                try:
+                    parsed = json.loads(raw_hist)
+                except Exception:
+                    parsed = None
+
+                if isinstance(parsed, list):
+                    # Caso nuevo: ya guardamos diccionarios con id/detalle/fecha/estado
+                    if parsed and all(isinstance(x, dict) for x in parsed):
+                        compromisos_detalle = [
+                            {
+                                "id": int(x.get("id")) if str(x.get("id")).isdigit() else x.get("id"),
+                                "detalle": x.get("detalle", ""),
+                                "fecha": x.get("fecha", ""),
+                                "estado": x.get("estado", ""),
+                            }
+                            for x in parsed
+                        ]
+                    # Caso viejo: era una lista de IDs -> armamos objetos mínimos vacíos
+                    elif parsed and all(isinstance(x, (int, str)) for x in parsed):
+                        for cid in parsed:
+                            try:
+                                cid_int = int(cid)
+                            except Exception:
+                                cid_int = cid
+                            compromisos_detalle.append(
+                                {
+                                    "id": cid_int,
+                                    "detalle": "",
+                                    "fecha": "",
+                                    "estado": "",
+                                }
+                            )
+
+        return JsonResponse(
+            {
+                "ok": True,
+                "caseId": case_id,
+                "proyectoId": proyecto_id,
+                "nombreProyecto": nombre,
+                "descripcion": desc,
+                "etapas": etapas,
+                "compromisosAceptados": compromisos_detalle,
+            },
+            status=200,
+        )
+
+    except Exception as e:
+        return JsonResponse(
+            {"ok": False, "error": "Error consultando Bonita / API", "detail": str(e)},
             status=500,
         )
