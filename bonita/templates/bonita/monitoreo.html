@@ -139,6 +139,7 @@
   const historialObservaciones = document.getElementById("historialObservaciones");
   const btnVolverProyecto = document.getElementById("btnVolverProyecto");
   const btnFinalizarProyecto = document.getElementById("btnFinalizarProyecto");
+  const divFinalizar      = document.getElementById("divFinalizar");
   
   let modalResponder = null;
 
@@ -161,12 +162,15 @@
       return;
     }
 
-    // Link para volver a agregar compromisos
     // Configurar botón según rol
     if (rol === "red_ongs") {
       btnVolverProyecto.textContent = "Volver a proyectos";
       btnVolverProyecto.href =
         `/bonita/revisar/?case=${encodeURIComponent(caseId)}&rol=red_ongs`;
+      // La Red de ONGs NO puede finalizar proyectos: ocultar el botón
+      if (divFinalizar) {
+        divFinalizar.style.display = "none";
+      }
     } else {
       btnVolverProyecto.textContent = "Volver al proyecto";
       btnVolverProyecto.href =
@@ -280,8 +284,8 @@
               tituloAlert = "❌ Tu respuesta anterior fue RECHAZADA";
           }
 
-          // Bloquear botón de finalizar
-          if(btnFinalizarProyecto) btnFinalizarProyecto.disabled = true;
+          // Bloquear botón de finalizar (si existe y no está oculto por rol)
+          if (btnFinalizarProyecto) btnFinalizarProyecto.disabled = true;
           btnVolverProyecto.classList.add("disabled"); 
 
           setMsg(`
@@ -305,11 +309,11 @@
                 <p>Hay observaciones que están siendo evaluadas por el Consejo Directivo. No puedes finalizar el proyecto hasta que todas sean resueltas.</p>
             </div>
           `);
-          if(btnFinalizarProyecto) btnFinalizarProyecto.disabled = true;
+          if (btnFinalizarProyecto) btnFinalizarProyecto.disabled = true;
       } else {
-          // Todo limpio, puede finalizar
+          // Todo limpio, puede finalizar (si no es Red de ONGs y el botón existe)
           setMsg("");
-          if(btnFinalizarProyecto) btnFinalizarProyecto.disabled = false;
+          if (btnFinalizarProyecto && rol !== "red_ongs") btnFinalizarProyecto.disabled = false;
           btnVolverProyecto.classList.remove("disabled");
       }
 
