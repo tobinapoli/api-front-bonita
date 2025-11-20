@@ -1888,3 +1888,149 @@ def responder_observacion_bonita_api(req: HttpRequest):
 
     except Exception as e:
         return JsonResponse({"ok": False, "error": str(e)}, status=500)
+
+
+@csrf_exempt
+def finalizar_proyecto_api(req: HttpRequest):
+    """
+    Finaliza un proyecto cambiando su estado a 'finalizado' en la API backend
+    y ejecuta la tarea 'Monitorear ejecución' con accion='FINALIZAR'.
+    
+    Solo permite finalizar si no hay observaciones pendientes, rechazadas o respondidas.
+    """
+    if req.method != "POST":
+        return JsonResponse({"error": "POST only"}, status=405)
+
+    data = _json(req)
+    case_id = str(data.get("caseId") or "").strip()
+    proyecto_id_raw = data.get("proyectoId")
+
+    if not case_id:
+        return JsonResponse({"ok": False, "error": "Falta caseId"}, status=400)
+    if proyecto_id_raw in (None, "", []):
+        return JsonResponse({"ok": False, "error": "Falta proyectoId"}, status=400)
+
+    try:
+        proyecto_id = int(proyecto_id_raw)
+    except (TypeError, ValueError):
+        return JsonResponse({"ok": False, "error": "proyectoId debe ser entero"}, status=400)
+
+    try:
+        cli = BonitaClient()
+        cli.login()
+        
+        # Obtener token JWT para verificar observaciones
+        var_access = cli.get_case_variable(case_id, "access")
+        if not var_access or "value" not in var_access:
+            return JsonResponse({"ok": False, "error": "No se encontró token de autenticación"}, status=401)
+        
+        jwt_token = (var_access["value"] or "").strip()
+        
+        # Verificar que no haya observaciones problemáticas
+        api_base = getattr(settings, "API_BASE_URL", "http://127.0.0.1:8000")
+        url_obs = f"{api_base}/api/proyectos/{proyecto_id}/observaciones/"
+        
+        headers = {
+            "Authorization": f"Bearer {jwt_token}",
+            "Content-Type": "application/json",
+        }
+        
+        try:
+            resp_obs = requests.get(url_obs, headers=headers, timeout=5)
+            if resp_obs.status_code == 200:
+                lista_obs = resp_obs.json()
+                observaciones_problematicas = [
+                    o for o in lista_obs
+                    if o.get("estado") in ["pendiente", "rechazada", "respondida"]
+                ]
+                
+                if observaciones_problematicas:
+                    return JsonResponse({
+                        "ok": False,
+                        "error": "No se puede finalizar el proyecto. Hay observaciones pendientes de resolución.",
+                        "observacionesPendientes": len(observaciones_problematicas)
+                    }, status=400)
+        except requests.RequestException as e:
+            print(f"Error consultando observaciones: {e}")
+            # Continuar de todas formas si no podemos verificar
+        
+        # Cambiar estado del proyecto a 'finalizado' en la API
+        url_cambiar_estado = f"{api_base}/api/proyectos/{proyecto_id}/estado/"
+        payload_estado = {"estado": "finalizado"}
+        
+        try:
+            resp_estado = requests.post(url_cambiar_estado, headers=headers, json=payload_estado, timeout=5)
+            
+            if resp_estado.status_code not in [200, 201]:
+                return JsonResponse({
+                    "ok": False,
+                    "error": "Error al cambiar el estado del proyecto en la API",
+                    "statusCode": resp_estado.status_code,
+                    "detail": resp_estado.text
+                }, status=500)
+        except requests.RequestException as e:
+            return JsonResponse({
+                "ok": False,
+                "error": "Error de red al cambiar estado del proyecto",
+                "detail": str(e)
+            }, status=500)
+        
+        # Ejecutar tarea en Bonita con accion='FINALIZAR'
+        assignee_username = getattr(settings, "BONITA_ASSIGNEE", "walter.bates")
+        user_id = cli.get_user_id_by_username(assignee_username)
+        
+        if not user_id:
+            return JsonResponse({
+                "ok": False,
+                "error": "Usuario Bonita no encontrado",
+                "detail": assignee_username
+            }, status=500)
+
+        # Buscar tarea "Monitorear ejecución / transparencia"
+        task = cli.wait_ready_task_in_case(case_id, "Monitorear ejecución / transparencia", timeout_sec=5)
+        
+        if not task:
+            # Si no hay tarea, puede ser que ya terminó o no está en ese estado
+            return JsonResponse({
+                "ok": False,
+                "error": "La tarea de monitoreo no está lista. El proceso puede haber finalizado ya o estar en otro estado.",
+                "caseId": case_id
+            }, status=409)
+
+        # Ejecutar la tarea con el contrato: accion = "FINALIZAR"
+        # Incluir los otros campos del contrato con valores por defecto
+        cli.assign_task(task["id"], user_id)
+        contract = {
+            "accion": "FINALIZAR",
+            "observacionId": 0,  # Valor dummy, no se usa para finalizar
+            "respuesta": ""      # Texto vacío, no se usa para finalizar
+        }
+        
+        try:
+            cli.execute_task(task["id"], contract)
+        except Exception as e:
+            return JsonResponse({
+                "ok": False,
+                "error": "Error ejecutando tarea en Bonita",
+                "detail": str(e),
+                "taskId": task["id"],
+                "contract": contract
+            }, status=500)
+
+        return JsonResponse({
+            "ok": True,
+            "caseId": case_id,
+            "proyectoId": proyecto_id,
+            "mensaje": "Proyecto finalizado correctamente"
+        })
+
+    except Exception as e:
+        import traceback
+        print(f"Error en finalizar_proyecto_api: {e}")
+        print(traceback.format_exc())
+        return JsonResponse({
+            "ok": False,
+            "error": "Error finalizando proyecto",
+            "detail": str(e),
+            "type": type(e).__name__
+        }, status=500)

@@ -76,16 +76,9 @@
       </section>
 
       <div class="mt-4 d-flex justify-content-between">
-        <div>
-          <a href="/bonita/login/" class="btn btn-outline-secondary btn-sm">
-            Volver al inicio
-          </a>
-          
-          <!-- Botón para que el Consejo Directivo cierre sesión -->
-          <button id="btnCerrarSesionConsejo" class="btn btn-outline-danger btn-sm ms-2" style="display: none;" onclick="cerrarSesionConsejo()">
-            <i class="bi bi-box-arrow-right"></i> Cerrar Sesión (Consejo)
-          </button>
-        </div>
+        <a href="/bonita/login/" class="btn btn-outline-secondary btn-sm">
+          Volver al inicio
+        </a>
         
         <a id="btnVolverProyecto" href="#" class="btn btn-outline-primary btn-sm">
           Volver a Evaluar / Agregar Compromisos
@@ -273,7 +266,11 @@
         historialObservaciones.innerHTML = htmlObs;
       }
 
-      // 3. Lógica de OBSERVACIONES PENDIENTES
+      // 3. Lógica de OBSERVACIONES PENDIENTES y control de finalización
+      const tieneObservacionesProblematicas = j.historialObservaciones && j.historialObservaciones.some(
+        obs => obs.estado === 'pendiente' || obs.estado === 'rechazada' || obs.estado === 'respondida'
+      );
+      
       if (j.observacionPendiente) {
           const obs = j.observacionPendiente;
           let tituloAlert = "⚠️ Tienes una observación pendiente del Consejo";
@@ -300,8 +297,17 @@
                 </div>
             </div>
           `);
+      } else if (tieneObservacionesProblematicas) {
+          // Hay observaciones pendientes de evaluación, bloquear finalización
+          setMsg(`
+            <div class="alert alert-warning border border-warning shadow-sm">
+                <h4>⏳ Observaciones en proceso</h4>
+                <p>Hay observaciones que están siendo evaluadas por el Consejo Directivo. No puedes finalizar el proyecto hasta que todas sean resueltas.</p>
+            </div>
+          `);
+          if(btnFinalizarProyecto) btnFinalizarProyecto.disabled = true;
       } else {
-          // Todo limpio
+          // Todo limpio, puede finalizar
           setMsg("");
           if(btnFinalizarProyecto) btnFinalizarProyecto.disabled = false;
           btnVolverProyecto.classList.remove("disabled");
@@ -380,8 +386,60 @@
       }
   }
 
-  function finalizarProyecto() {
-      alert("Funcionalidad de finalizar proyecto en construcción...");
+  async function finalizarProyecto() {
+    const caseId = qp("case");
+    const proyectoId = qp("proyecto");
+    
+    if (!caseId || !proyectoId) {
+      alert("Faltan parámetros necesarios para finalizar el proyecto.");
+      return;
+    }
+
+    const confirmar = confirm(
+      "¿Estás seguro de que deseas finalizar este proyecto?\n\n" +
+      "Esta acción cambiará el estado del proyecto a 'Finalizado' y no podrás revertirlo."
+    );
+    
+    if (!confirmar) return;
+
+    const btn = document.getElementById("btnFinalizarProyecto");
+    const textoOriginal = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Finalizando...';
+
+    try {
+      const res = await fetch("/api/bonita/finalizar-proyecto/", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          caseId: caseId,
+          proyectoId: parseInt(proyectoId)
+        })
+      });
+
+      const j = await res.json();
+
+      if (j.ok) {
+        setMsg(`
+          <div class="alert alert-success">
+            <strong>✓ Proyecto finalizado correctamente</strong>
+            <p class="mb-0">El proyecto ha sido marcado como finalizado. Redirigiendo...</p>
+          </div>
+        `);
+        
+        setTimeout(() => {
+          window.location.href = '/bonita/login/';
+        }, 2000);
+      } else {
+        alert("Error al finalizar proyecto: " + (j.error || "Desconocido"));
+        btn.disabled = false;
+        btn.innerHTML = textoOriginal;
+      }
+    } catch (err) {
+      alert("Error de red al finalizar el proyecto.");
+      btn.disabled = false;
+      btn.innerHTML = textoOriginal;
+    }
   }
 
   function escapeHtml(text) {
