@@ -1034,6 +1034,7 @@ def enviar_observaciones_consejo_api(req: HttpRequest):
     case_id = str(data.get("caseId") or "").strip()
     proyecto_id_raw = data.get("proyectoId")
     observaciones = str(data.get("observaciones") or "").strip()
+    continuar_revisando = data.get("continuarRevisando", False)
 
     if not case_id:
         return JsonResponse({"ok": False, "error": "Falta caseId"}, status=400)
@@ -1083,6 +1084,7 @@ def enviar_observaciones_consejo_api(req: HttpRequest):
         payload_contrato = {
             "proyectoId": proyecto_id,
             "observaciones": observaciones,
+            "continuarRevisando": continuar_revisando,
         }
         cli.execute_task(task["id"], payload_contrato)
 
@@ -1134,6 +1136,85 @@ def enviar_observaciones_consejo_api(req: HttpRequest):
     except Exception as e:
         return JsonResponse(
             {"ok": False, "error": "Error integrando con Bonita", "detail": str(e)},
+            status=500,
+        )
+
+
+@csrf_exempt
+def cerrar_sesion_consejo_api(req: HttpRequest):
+    """
+    Cierra la sesión del Consejo Directivo finalizando el proceso.
+    
+    Este endpoint busca la tarea "Revisar proyecto y cargar observaciones" 
+    y la ejecuta con continuarRevisando=false para terminar el proceso.
+    
+    Si no hay tarea pendiente, devuelve ok=True (el proceso ya terminó).
+    
+    Espera en POST:
+      - caseId: ID del caso en Bonita
+    """
+    if req.method != "POST":
+        return JsonResponse({"error": "POST only"}, status=405)
+
+    data = _json(req)
+    case_id = str(data.get("caseId") or "").strip()
+
+    if not case_id:
+        return JsonResponse({"ok": False, "error": "Falta caseId"}, status=400)
+
+    try:
+        cli = BonitaClient()
+        cli.login()
+
+        assignee_username = getattr(settings, "BONITA_ASSIGNEE", "walter.bates")
+        user_id = cli.get_user_id_by_username(assignee_username)
+        if not user_id:
+            return JsonResponse(
+                {"ok": False, "error": "Usuario Bonita no encontrado", "detail": assignee_username},
+                status=500,
+            )
+
+        # Buscar tarea "Revisar proyecto y cargar observaciones"
+        # Si no existe, el proceso ya terminó o no hay tarea pendiente
+        task = cli.wait_ready_task_in_case(
+            case_id,
+            task_name="Revisar proyecto y cargar observaciones",
+            timeout_sec=5,
+        )
+        
+        if not task:
+            # No hay tarea pendiente, considerar que ya terminó
+            return JsonResponse(
+                {
+                    "ok": True,
+                    "caseId": case_id,
+                    "mensaje": "No hay tareas pendientes, sesión ya finalizada."
+                },
+                status=200,
+            )
+
+        # Ejecutar la tarea con continuarRevisando=false y datos mínimos
+        # para que el proceso vaya al Fin
+        cli.assign_task(task["id"], user_id)
+        payload_contrato = {
+            "proyectoId": 0,  # Valor dummy, no importa porque no se usará
+            "observaciones": "Sesión cerrada por el usuario",  # Texto dummy
+            "continuarRevisando": False,
+        }
+        cli.execute_task(task["id"], payload_contrato)
+
+        return JsonResponse(
+            {
+                "ok": True,
+                "caseId": case_id,
+                "mensaje": "Sesión cerrada correctamente"
+            },
+            status=200,
+        )
+
+    except Exception as e:
+        return JsonResponse(
+            {"ok": False, "error": "Error cerrando sesión", "detail": str(e)},
             status=500,
         )
 

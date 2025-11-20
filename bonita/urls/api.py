@@ -17,6 +17,7 @@ from bonita.views import (
     next_step_api,
     obtener_proyectos_en_ejecucion_api,
     enviar_observaciones_consejo_api,
+    cerrar_sesion_consejo_api,
     ver_observaciones_proyecto_api,
     revisar_compromisos_api,
     evaluar_propuestas_api,
@@ -46,6 +47,7 @@ urlpatterns = [
         name="bonita_ver_observaciones",
     ),
     path("consejo/observaciones/", enviar_observaciones_consejo_api, name="bonita_consejo_observaciones"),
+    path("consejo/cerrar-sesion/", cerrar_sesion_consejo_api, name="bonita_cerrar_sesion_consejo"),
 
     # Evaluar propuestas / monitoreo
     path("revisar-compromisos/", revisar_compromisos_api,  name="bonita_revisar_compromisos"),

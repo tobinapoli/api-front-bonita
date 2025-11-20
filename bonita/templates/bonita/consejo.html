@@ -45,9 +45,14 @@
         <h4 class="mb-0">🔍 Revisión Bimensual de Proyectos</h4>
         <small>Control y seguimiento - 2 veces al mes</small>
       </div>
-      <button id="btnCargar" class="btn btn-light btn-sm">
-        <i class="bi bi-arrow-clockwise"></i> Actualizar
-      </button>
+      <div>
+        <button id="btnCargar" class="btn btn-light btn-sm me-2">
+          <i class="bi bi-arrow-clockwise"></i> Actualizar
+        </button>
+        <button id="btnCerrarSesion" class="btn btn-danger btn-sm">
+          <i class="bi bi-box-arrow-right"></i> Cerrar Sesión
+        </button>
+      </div>
     </div>
     <div class="card-body">
       <div class="alert alert-info mb-2">
@@ -135,9 +140,14 @@
         </div>
         <div class="modal-footer">
           <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
-          <button type="button" class="btn btn-primary" id="btnEnviarObservaciones">
-            <i class="bi bi-send"></i> Enviar Observaciones
-          </button>
+          <div class="ms-auto">
+            <button type="button" class="btn btn-success me-2" id="btnEnviarYContinuar">
+              <i class="bi bi-send"></i> Enviar y Continuar Revisando
+            </button>
+            <button type="button" class="btn btn-primary" id="btnEnviarYTerminar">
+              <i class="bi bi-send-check"></i> Enviar y Terminar Sesión
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -157,6 +167,13 @@
   let modalObservaciones = null;
   let modalVerObservaciones = null;
   let proyectoActual = null;
+
+  function setMsg(html) {
+    const msg = document.getElementById("msg");
+    if (msg) {
+      msg.innerHTML = html || "";
+    }
+  }
 
   // Inicializar modales
   document.addEventListener('DOMContentLoaded', function() {
@@ -299,7 +316,7 @@
     modalObservaciones.show();
   }
 
-  async function enviarObservaciones() {
+  async function enviarObservaciones(continuarRevisando) {
     const caseId = qp("case");
     const proyectoId = document.getElementById("modalProyectoId").value;
     const observaciones = document.getElementById("observaciones").value.trim();
@@ -310,9 +327,14 @@
       return;
     }
 
-    const btnEnviar = document.getElementById("btnEnviarObservaciones");
-    btnEnviar.disabled = true;
-    btnEnviar.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Enviando...';
+    const btnContinuar = document.getElementById("btnEnviarYContinuar");
+    const btnTerminar = document.getElementById("btnEnviarYTerminar");
+    btnContinuar.disabled = true;
+    btnTerminar.disabled = true;
+    
+    const btnActivo = continuarRevisando ? btnContinuar : btnTerminar;
+    const textoOriginal = btnActivo.innerHTML;
+    btnActivo.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Enviando...';
 
     try {
       const res = await fetch("/api/bonita/consejo/observaciones/", {
@@ -321,7 +343,8 @@
         body: JSON.stringify({
           caseId: caseId,
           proyectoId: parseInt(proyectoId),
-          observaciones: observaciones
+          observaciones: observaciones,
+          continuarRevisando: continuarRevisando
         })
       });
 
@@ -332,38 +355,48 @@
           `<div class="alert alert-danger">
             <strong>Error:</strong> ${j.error || 'No se pudieron enviar las observaciones'}
           </div>`;
-        btnEnviar.disabled = false;
-        btnEnviar.innerHTML = '<i class="bi bi-send"></i> Enviar Observaciones';
+        btnContinuar.disabled = false;
+        btnTerminar.disabled = false;
+        btnActivo.innerHTML = textoOriginal;
         return;
       }
 
-      document.getElementById("modalMensaje").innerHTML = 
-        `<div class="alert alert-success">
-          <strong>✓ Observaciones enviadas correctamente</strong>
-          <p class="mb-0 small">Los ejecutores del proyecto han sido notificados.</p>
-        </div>`;
-
-      // Cerrar modal después de 2 segundos
-      setTimeout(() => {
+      if (continuarRevisando) {
+        // Cerrar modal y mostrar mensaje de éxito
         modalObservaciones.hide();
-        document.getElementById("msg").innerHTML = 
-          `<div class="alert alert-success alert-dismissible fade show">
-            <strong>✓ Observaciones registradas para:</strong> ${escapeHtml(proyectoActual.nombre)}
+        setMsg(`
+          <div class="alert alert-success alert-dismissible fade show">
+            <strong>✓ Observación enviada correctamente</strong>
+            <p class="mb-2">Los ejecutores del proyecto han sido notificados y tienen 5 días para responder.</p>
+            <p class="mb-0">
+              <strong>💡 Tip:</strong> Presiona <kbd>F5</kbd> para recargar y ver la lista actualizada de proyectos.
+            </p>
             <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+          </div>
+        `);
+        // Scroll hacia arriba para que vea el mensaje
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      } else {
+        // Terminar sesión - redirigir al login o home
+        document.getElementById("modalMensaje").innerHTML = 
+          `<div class="alert alert-success">
+            <strong>✓ Observación enviada</strong>
+            <p class="mb-0 small">Cerrando sesión...</p>
           </div>`;
         
-        // Opcional: recargar lista de proyectos
-        // cargarProyectos();
-      }, 2000);
+        setTimeout(() => {
+          window.location.href = '/bonita/login/';
+        }, 1000);
+      }
 
     } catch (err) {
       document.getElementById("modalMensaje").innerHTML = 
         `<div class="alert alert-danger">
           <strong>Error de red:</strong> No se pudo conectar al servidor.
         </div>`;
-    } finally {
-      btnEnviar.disabled = false;
-      btnEnviar.innerHTML = '<i class="bi bi-send"></i> Enviar Observaciones';
+      btnContinuar.disabled = false;
+      btnTerminar.disabled = false;
+      btnActivo.innerHTML = textoOriginal;
     }
   }
 
@@ -486,7 +519,60 @@
 
   // Event listeners
   document.getElementById("btnCargar").addEventListener("click", cargarProyectos);
-  document.getElementById("btnEnviarObservaciones").addEventListener("click", enviarObservaciones);
+  document.getElementById("btnCerrarSesion").addEventListener("click", cerrarSesionConsejo);
+  document.getElementById("btnEnviarYContinuar").addEventListener("click", () => enviarObservaciones(true));
+  document.getElementById("btnEnviarYTerminar").addEventListener("click", () => enviarObservaciones(false));
+
+  async function cerrarSesionConsejo() {
+    const caseId = qp("case");
+    
+    if (!caseId) {
+      window.location.href = '/bonita/login/';
+      return;
+    }
+
+    const confirmar = confirm(
+      "¿Estás seguro de que deseas cerrar la sesión?\n\n" +
+      "Esto finalizará el proceso de revisión del Consejo Directivo."
+    );
+    
+    if (!confirmar) return;
+
+    const btn = document.getElementById("btnCerrarSesion");
+    const textoOriginal = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Cerrando...';
+
+    try {
+      const res = await fetch("/api/bonita/consejo/cerrar-sesion/", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ caseId: caseId })
+      });
+
+      const j = await res.json();
+
+      if (j.ok) {
+        setMsg(`
+          <div class="alert alert-success">
+            <strong>✓ Sesión cerrada correctamente</strong>
+            <p class="mb-0 small">Redirigiendo...</p>
+          </div>
+        `);
+        setTimeout(() => {
+          window.location.href = '/bonita/login/';
+        }, 1000);
+      } else {
+        alert("Error al cerrar sesión: " + (j.error || "Desconocido"));
+        btn.disabled = false;
+        btn.innerHTML = textoOriginal;
+      }
+    } catch (err) {
+      alert("Error de red al cerrar sesión");
+      btn.disabled = false;
+      btn.innerHTML = textoOriginal;
+    }
+  }
 
   // Cargar proyectos al iniciar
   cargarProyectos();

@@ -76,9 +76,16 @@
       </section>
 
       <div class="mt-4 d-flex justify-content-between">
-        <a href="/bonita/login/" class="btn btn-outline-secondary btn-sm">
-          Volver al inicio
-        </a>
+        <div>
+          <a href="/bonita/login/" class="btn btn-outline-secondary btn-sm">
+            Volver al inicio
+          </a>
+          
+          <!-- Botón para que el Consejo Directivo cierre sesión -->
+          <button id="btnCerrarSesionConsejo" class="btn btn-outline-danger btn-sm ms-2" style="display: none;" onclick="cerrarSesionConsejo()">
+            <i class="bi bi-box-arrow-right"></i> Cerrar Sesión (Consejo)
+          </button>
+        </div>
         
         <a id="btnVolverProyecto" href="#" class="btn btn-outline-primary btn-sm">
           Volver a Evaluar / Agregar Compromisos
