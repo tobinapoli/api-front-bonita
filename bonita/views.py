@@ -1707,6 +1707,7 @@ def resumen_proyecto_api(req: HttpRequest):
 
         # 4) Consultar API Backend para ver observaciones pendientes/rechazadas
         observacion_pendiente = None
+        historial_observaciones = []
         if proyecto_id and jwt_token:
             try:
                 api_base = getattr(settings, "API_BASE_URL", "http://127.0.0.1:8000")
@@ -1720,6 +1721,11 @@ def resumen_proyecto_api(req: HttpRequest):
                 resp_obs = requests.get(url_obs, headers=headers, timeout=5)
                 if resp_obs.status_code == 200:
                     lista_obs = resp_obs.json()
+                    
+                    # Guardar el historial completo de observaciones
+                    historial_observaciones = lista_obs
+                    
+                    # Buscar observaciones pendientes/rechazadas para bloqueo
                     pendientes = [
                         o for o in lista_obs
                         if o.get("estado") in ["pendiente", "rechazada"]
@@ -1746,6 +1752,7 @@ def resumen_proyecto_api(req: HttpRequest):
                 "etapas": etapas,
                 "compromisosAceptados": compromisos_detalle,
                 "observacionPendiente": observacion_pendiente,
+                "historialObservaciones": historial_observaciones,
             },
             status=200,
         )

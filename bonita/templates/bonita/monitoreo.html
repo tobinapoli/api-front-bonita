@@ -66,6 +66,15 @@
         </div>
       </section>
 
+      <section class="mt-4">
+        <h5>Historial de Observaciones del Consejo Directivo</h5>
+        <div id="historialObservaciones">
+          <div class="alert alert-secondary mb-0">
+            No hay observaciones registradas para este proyecto.
+          </div>
+        </div>
+      </section>
+
       <div class="mt-4 d-flex justify-content-between">
         <a href="/bonita/login/" class="btn btn-outline-secondary btn-sm">
           Volver al inicio
@@ -127,6 +136,7 @@
   const pDescripcion      = document.getElementById("pDescripcion");
   const tablaEtapas       = document.getElementById("tablaEtapas");
   const listaCompromisos  = document.getElementById("listaCompromisos");
+  const historialObservaciones = document.getElementById("historialObservaciones");
   const btnVolverProyecto = document.getElementById("btnVolverProyecto");
   const btnFinalizarProyecto = document.getElementById("btnFinalizarProyecto");
   
@@ -216,7 +226,47 @@
         listaCompromisos.innerHTML = html;
       }
 
-      // 2. Lógica de OBSERVACIONES PENDIENTES
+      // 2. Renderizar historial de observaciones
+      const observaciones = j.historialObservaciones || [];
+      if (!observaciones.length) {
+        historialObservaciones.innerHTML = `
+          <div class="alert alert-secondary mb-0">
+            No hay observaciones registradas para este proyecto.
+          </div>`;
+      } else {
+        const htmlObs = observaciones.map(obs => {
+          const estadoBadge = getEstadoBadge(obs.estado);
+          const fechaCreacion = obs.fecha_creacion ? new Date(obs.fecha_creacion).toLocaleDateString('es-AR') : '-';
+          const fechaRespuesta = obs.fecha_respuesta ? new Date(obs.fecha_respuesta).toLocaleDateString('es-AR') : '-';
+          
+          return `
+            <div class="card mb-3 shadow-sm">
+              <div class="card-header d-flex justify-content-between align-items-center">
+                <span><strong>Observación #${obs.id}</strong></span>
+                ${estadoBadge}
+              </div>
+              <div class="card-body">
+                <p class="mb-2"><strong>📋 Observación del Consejo:</strong></p>
+                <p class="text-muted mb-3" style="white-space: pre-line;">${escapeHtml(obs.texto)}</p>
+                
+                ${obs.respuesta ? `
+                  <hr>
+                  <p class="mb-2"><strong>💬 Respuesta de la ONG:</strong></p>
+                  <p class="text-muted mb-2" style="white-space: pre-line;">${escapeHtml(obs.respuesta)}</p>
+                  <small class="text-muted">Respondida el: ${fechaRespuesta}</small>
+                ` : ''}
+                
+                <div class="mt-2 text-end small text-muted">
+                  Creada el: ${fechaCreacion}
+                </div>
+              </div>
+            </div>
+          `;
+        }).join("");
+        historialObservaciones.innerHTML = htmlObs;
+      }
+
+      // 3. Lógica de OBSERVACIONES PENDIENTES
       if (j.observacionPendiente) {
           const obs = j.observacionPendiente;
           let tituloAlert = "⚠️ Tienes una observación pendiente del Consejo";
@@ -254,6 +304,19 @@
       console.error(e);
       setMsg('<div class="alert alert-danger">Error de red al cargar el resumen.</div>');
     }
+  }
+
+  // --- Funciones auxiliares ---
+
+  function getEstadoBadge(estado) {
+    const badges = {
+      'pendiente': '<span class="badge bg-warning text-dark">⏳ Pendiente de respuesta</span>',
+      'respondida': '<span class="badge bg-info text-dark">💬 Respondida - En evaluación</span>',
+      'aprobada': '<span class="badge bg-success">✅ Aprobada</span>',
+      'rechazada': '<span class="badge bg-danger">❌ Rechazada</span>',
+      'vencida': '<span class="badge bg-secondary">⏰ Vencida</span>'
+    };
+    return badges[estado] || `<span class="badge bg-secondary">${estado}</span>`;
   }
 
   // --- Funciones para Responder ---
