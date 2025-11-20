@@ -230,7 +230,7 @@
         listaCompromisos.innerHTML = html;
       }
 
-      // 2. Renderizar historial de observaciones
+      // 2. Renderizar historial de observaciones (visible para ambos roles)
       const observaciones = j.historialObservaciones || [];
       if (!observaciones.length) {
         historialObservaciones.innerHTML = `
@@ -275,7 +275,7 @@
         obs => obs.estado === 'pendiente' || obs.estado === 'rechazada' || obs.estado === 'respondida'
       );
       
-      if (j.observacionPendiente) {
+      if (j.observacionPendiente && rol !== "red_ongs") {
           const obs = j.observacionPendiente;
           let tituloAlert = "⚠️ Tienes una observación pendiente del Consejo";
           let claseAlert = "alert-danger";
@@ -284,9 +284,16 @@
               tituloAlert = "❌ Tu respuesta anterior fue RECHAZADA";
           }
 
-          // Bloquear botón de finalizar (si existe y no está oculto por rol)
+          // Solo la ONG originante puede responder y queda bloqueada para finalizar
+          let bloqueBoton = `
+            <div class="text-end">
+                <button class="btn btn-danger fw-bold" onclick="abrirModalResponder(${obs.id}, '${escapeHtml(obs.texto)}')">
+                    Responder Observación
+                </button>
+            </div>`;
+
           if (btnFinalizarProyecto) btnFinalizarProyecto.disabled = true;
-          btnVolverProyecto.classList.add("disabled"); 
+          btnVolverProyecto.classList.add("disabled");
 
           setMsg(`
             <div class="alert ${claseAlert} border border-danger shadow-sm">
@@ -294,15 +301,11 @@
                 <p>El Consejo Directivo ha realizado observaciones sobre la ejecución del proyecto. Debes responder para poder continuar.</p>
                 <hr>
                 <p><strong>Detalle:</strong> "${obs.texto}"</p>
-                <div class="text-end">
-                    <button class="btn btn-danger fw-bold" onclick="abrirModalResponder(${obs.id}, '${escapeHtml(obs.texto)}')">
-                        Responder Observación
-                    </button>
-                </div>
+                ${bloqueBoton}
             </div>
           `);
-      } else if (tieneObservacionesProblematicas) {
-          // Hay observaciones pendientes de evaluación, bloquear finalización
+      } else if (tieneObservacionesProblematicas && rol !== "red_ongs") {
+          // Hay observaciones pendientes de evaluación, bloquear finalización (solo relevante para ONG originante)
           setMsg(`
             <div class="alert alert-warning border border-warning shadow-sm">
                 <h4>⏳ Observaciones en proceso</h4>
