@@ -12,3 +12,22 @@ class ProyectoMonitoreo(models.Model):
 
     def __str__(self):
         return f"[{self.proyecto_id}] {self.nombre}"
+
+
+class SesionBonita(models.Model):
+    """
+    Guarda la relación entre un usuario de la API y su caso activo en Bonita.
+    Esto permite retomar el flujo cuando el usuario vuelve a loguearse.
+    """
+    api_username = models.CharField(max_length=255, unique=True, db_index=True)
+    case_id = models.CharField(max_length=100)
+    proceso = models.CharField(max_length=100)  # 'ProjectPlanning' o 'Consejo Directivo'
+    creado_en = models.DateTimeField(auto_now_add=True)
+    actualizado_en = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"{self.api_username} → caso {self.case_id}"
+
+    class Meta:
+        verbose_name = "Sesión Bonita"
+        verbose_name_plural = "Sesiones Bonita"

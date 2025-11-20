@@ -24,6 +24,7 @@ from bonita.views import (
     evaluar_propuestas_api,
     resumen_proyecto_api,
     red_ongs_salir_api,          
+    debug_case_variables_api,
 )
 
 urlpatterns = [
@@ -67,4 +68,7 @@ urlpatterns = [
 
     path("consejo/evaluar/", enviar_evaluacion_consejo_api, name="bonita_consejo_evaluar_api"),
     path("consejo/datos-evaluacion/", obtener_datos_evaluacion_api, name="bonita_datos_evaluacion"),
+    # Debug
+    path("debug/case-variables/", debug_case_variables_api, name="bonita_debug_variables"),
+
 ]

@@ -174,6 +174,23 @@ class BonitaClient:
         r.raise_for_status()
         return self._json(r)
 
+    # --- Casos ---
+
+    def get_case(self, case_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Obtiene la información de un caso por su ID.
+        Devuelve None si el caso no existe.
+        """
+        r = self.s.get(
+            f"{self.api}/bpm/case/{case_id}",
+            headers=self._h(),
+            timeout=self._timeout,
+        )
+        if r.status_code == 404:
+            return None
+        r.raise_for_status()
+        return self._json(r)
+
     # --- Variables del caso ---
 
     def get_case_variable(self, case_id: str, var_name: str) -> Optional[Dict[str, Any]]:
