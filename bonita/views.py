@@ -224,25 +224,34 @@ def next_step_api(req: HttpRequest):
         pedido_id = None
         rol_usuario = None
         
+        # Leer proyectoId
         try:
             var_proyecto = cli.get_case_variable(case_id, "proyectoId")
-            if var_proyecto:
-                proyecto_id = var_proyecto.get("value")
-        except:
+            if var_proyecto and "value" in var_proyecto:
+                val = var_proyecto["value"]
+                if val is not None and str(val).strip() and str(val).lower() != "null":
+                    proyecto_id = str(val).strip()
+        except Exception:
             pass
         
+        # Leer pedidoId
         try:
             var_pedido = cli.get_case_variable(case_id, "pedidoId")
-            if var_pedido:
-                pedido_id = var_pedido.get("value")
-        except:
+            if var_pedido and "value" in var_pedido:
+                val = var_pedido["value"]
+                if val is not None and str(val).strip() and str(val).lower() != "null":
+                    pedido_id = str(val).strip()
+        except Exception:
             pass
         
+        # Leer rol
         try:
             var_rol = cli.get_case_variable(case_id, "rol")
-            if var_rol:
-                rol_usuario = var_rol.get("value")
-        except:
+            if var_rol and "value" in var_rol:
+                val = var_rol["value"]
+                if val:
+                    rol_usuario = str(val).strip()
+        except Exception:
             pass
 
         # Intentar buscar tarea ready (timeout corto)
@@ -287,9 +296,11 @@ def next_step_api(req: HttpRequest):
             elif name == "Registrar compromiso":
                 rol = "red_ongs"
                 if proyecto_id and pedido_id:
-                    url = f"/bonita/compromiso/?case={case_id}&proyecto={proyecto_id}&pedido={pedido_id}"
+                    url = f"/bonita/compromiso/?case={case_id}&proyecto={proyecto_id}&pedido={pedido_id}&rol=red_ongs"
+                elif proyecto_id:
+                    url = f"/bonita/compromiso/?case={case_id}&proyecto={proyecto_id}&rol=red_ongs"
                 else:
-                    url = f"/bonita/compromiso/?case={case_id}"
+                    url = f"/bonita/compromiso/?case={case_id}&rol=red_ongs"
             
             elif name == "Evaluar propuestas":
                 rol = "ong_originante"
@@ -357,6 +368,7 @@ def next_step_api(req: HttpRequest):
                 "rol": rol,
                 "url": url,
                 "proyectoId": proyecto_id,
+                "pedidoId": pedido_id,
             },
             status=200,
         )
@@ -829,6 +841,12 @@ def elegir_proyecto_api(req: HttpRequest):
             "seguirColaborando": True,   # NUEVO: sigue colaborando
         }
         cli.execute_task(task["id"], contract_payload)
+
+        # Guardar explícitamente el proyectoId en la variable del caso
+        try:
+            cli.update_case_variable(case_id, "proyectoId", str(proyecto_id_int))
+        except Exception:
+            pass
 
         return JsonResponse(
             {"ok": True, "caseId": case_id, "proyectoId": proyecto_id_int},
