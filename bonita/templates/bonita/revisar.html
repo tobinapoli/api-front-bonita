@@ -12,7 +12,7 @@
   <div class="container">
     <a class="navbar-brand" href="/bonita/login/">ProjectPlanning</a>
 
-    <!-- NUEVO: botón para terminar la colaboración de la red -->
+    <!-- Botón para terminar la colaboración de la red -->
     <button id="btnSalirRed" class="btn btn-outline-light btn-sm ms-auto" onclick="salirRed()">
       Cerrar sesión Red de ONGs
     </button>
@@ -29,8 +29,8 @@
       <div class="alert alert-info mb-3">
         Caso: <code id="caseOut">{{ request.GET.case }}</code>
         <div class="small mt-2">
-          Esta vista muestra proyectos en <strong>planificación</strong> y <strong>ejecución</strong>.
-          Los proyectos <strong>finalizados</strong> no se muestran porque ya no admiten interacción.
+          Esta vista muestra proyectos en <strong>planificación</strong>, <strong>ejecución</strong> y
+          <strong>finalizados</strong>. En los proyectos finalizados solo podés ver el detalle.
         </div>
       </div>
       <div id="panel"></div>
@@ -88,6 +88,9 @@
     if (e === "ejecucion") {
       return "El proyecto está en ejecución: podés monitorear su avance.";
     }
+    if (e === "finalizado") {
+      return "El proyecto está finalizado: podés ver el detalle y el historial.";
+    }
     return "";
   }
 
@@ -109,13 +112,11 @@
       return;
     }
 
-    const lista = (j.proyectos || []).filter(
-      p => normalizarEstado(p.estado) !== "finalizado"
-    );
+    const lista = j.proyectos || [];
 
     if (lista.length === 0) {
       panel.innerHTML =
-        `<div class="alert alert-secondary">No hay proyectos en planificación o ejecución.</div>`;
+        `<div class="alert alert-secondary">No hay proyectos para este caso.</div>`;
       return;
     }
 
@@ -133,13 +134,17 @@
                   onclick="verPedidos(${idp})">
             Ver pedidos
           </button>`;
-      }
-
-      if (estado === "ejecucion") {
+      } else if (estado === "ejecucion") {
         botonHTML = `
           <button class="btn btn-sm btn-outline-success"
                   onclick="verMonitoreo(${idp})">
             Monitorear
+          </button>`;
+      } else if (estado === "finalizado") {
+        botonHTML = `
+          <button class="btn btn-sm btn-outline-dark"
+                  onclick="verMonitoreo(${idp})">
+            Ver detalle
           </button>`;
       }
 
@@ -204,7 +209,7 @@
       `/bonita/monitoreo/?case=${encodeURIComponent(caseId)}&proyecto=${encodeURIComponent(proyectoId)}&rol=red_ongs`;
   }
 
-  // NUEVO: terminar colaboración de la Red de ONGs (seguirColaborando = false)
+  // Terminar colaboración de la Red de ONGs (seguirColaborando = false)
   async function salirRed() {
     const caseId = qp("case");
     if (!caseId) {
