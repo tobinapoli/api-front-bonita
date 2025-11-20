@@ -11,7 +11,7 @@ import requests
 
 from .bonita_client import BonitaClient
 from .validators import validate_iniciar_payload
-from .models import ProyectoMonitoreo   # <--- ESTO FALTABA
+from .models import ProyectoMonitoreo, SesionBonita   # <--- AGREGADO SesionBonita
 
 # --------------------------- Páginas HTML ---------------------------
 
@@ -111,8 +111,10 @@ def _json(req: HttpRequest) -> Dict[str, Any]:
 def login_api(req: HttpRequest):
     """
     1. Recibe usuario y contraseña del frontend.
-    2. Según el flag 'consejo' decide si instancia ProjectPlanning o Consejo Directivo.
-    3. Devuelve el caseId sin esperar a que aparezcan las tareas (flujo no bloqueante).
+    2. Verifica si el usuario ya tiene un caso activo en Bonita.
+    3. Si tiene caso activo y el caso existe en Bonita, lo retoma.
+    4. Si no tiene caso o el caso está cerrado, crea uno nuevo.
+    5. Devuelve el caseId.
     """
     if req.method != "POST":
         return JsonResponse({"error": "POST only"}, status=405)
@@ -129,7 +131,7 @@ def login_api(req: HttpRequest):
         cli = BonitaClient()
         cli.login()
 
-        # Elegir proceso según el flag "consejo"
+        # Determinar proceso según el flag "consejo"
         if is_consejo:
             proc_name = getattr(settings, "BONITA_PROCESS_NAME_CONSEJO", "Consejo Directivo")
             proc_version = getattr(settings, "BONITA_PROCESS_VERSION_CONSEJO", "1.0")
@@ -137,21 +139,57 @@ def login_api(req: HttpRequest):
             proc_name = getattr(settings, "BONITA_PROCESS_NAME", "ProjectPlanning")
             proc_version = getattr(settings, "BONITA_PROCESS_VERSION", "1.0")
 
-        # Buscar proceso correspondiente
-        proc_id = cli.get_process_definition_id(proc_name, proc_version)
-        if not proc_id:
-            return JsonResponse(
-                {"ok": False, "error": f"Proceso {proc_name} {proc_version} no encontrado"},
-                status=500,
+        # 1. Verificar si el usuario ya tiene una sesión activa para este proceso
+        sesion = SesionBonita.objects.filter(
+            api_username=api_user,
+            proceso=proc_name
+        ).first()
+
+        case_id = None
+        caso_existente = False
+
+        if sesion:
+            # Verificar si el caso existe y está activo en Bonita
+            try:
+                case_info = cli.get_case(sesion.case_id)
+                if case_info and case_info.get("state") != "completed":
+                    # El caso existe y está activo, lo retomamos
+                    case_id = sesion.case_id
+                    caso_existente = True
+                else:
+                    # El caso está completado, eliminamos la sesión
+                    sesion.delete()
+            except Exception:
+                # El caso no existe en Bonita, eliminamos la sesión
+                sesion.delete()
+
+        # 2. Si no hay caso activo, crear uno nuevo
+        if not case_id:
+            proc_id = cli.get_process_definition_id(proc_name, proc_version)
+            if not proc_id:
+                return JsonResponse(
+                    {"ok": False, "error": f"Proceso {proc_name} {proc_version} no encontrado"},
+                    status=500,
+                )
+
+            # Instanciar proceso con usuario y password como payload
+            inst = cli.instantiate_process(proc_id, {"apiUser": api_user, "apiPass": api_pass})
+            case_id = str((inst or {}).get("caseId") or (inst or {}).get("id") or "")
+            if not case_id:
+                return JsonResponse({"ok": False, "error": "No se obtuvo caseId"}, status=500)
+
+            # Guardar la sesión en la base de datos
+            SesionBonita.objects.update_or_create(
+                api_username=api_user,
+                proceso=proc_name,
+                defaults={"case_id": case_id}
             )
 
-        # Instanciar proceso con usuario y password como payload
-        inst = cli.instantiate_process(proc_id, {"apiUser": api_user, "apiPass": api_pass})
-        case_id = str((inst or {}).get("caseId") or (inst or {}).get("id") or "")
-        if not case_id:
-            return JsonResponse({"ok": False, "error": "No se obtuvo caseId"}, status=500)
-
-        return JsonResponse({"ok": True, "caseId": case_id}, status=200)
+        return JsonResponse({
+            "ok": True, 
+            "caseId": case_id,
+            "casoExistente": caso_existente
+        }, status=200)
 
     except Exception as e:
         return JsonResponse(
@@ -163,12 +201,11 @@ def login_api(req: HttpRequest):
 @csrf_exempt
 def next_step_api(req: HttpRequest):
     """
-    Dado un caseId recién creado, espera la primera tarea 'ready'
+    Dado un caseId, busca la tarea pendiente (ready) en Bonita
     y decide a qué pantalla debe ir el usuario.
-
-    - Si la tarea es 'Definir plan de trabajo y economico' => ONG originante => /bonita/nuevo/
-    - Si la tarea es 'Revisar proyectos' => Red de ONGs => /bonita/revisar/
-    - Si la tarea es 'Revisar proyecto y cargar observaciones' => Consejo Directivo => /bonita/consejo/
+    
+    Si no hay tarea ready, intenta determinar el estado del caso
+    a partir de las variables para redirigir correctamente.
     """
     if req.method != "POST":
         return JsonResponse({"error": "POST only"}, status=405)
@@ -182,36 +219,135 @@ def next_step_api(req: HttpRequest):
         cli = BonitaClient()
         cli.login()
 
-        # Esperamos alguna tarea ready del caso (la primera que aparezca)
+        # Obtener variables del caso para construir URLs con parámetros
+        proyecto_id = None
+        pedido_id = None
+        rol_usuario = None
+        
+        try:
+            var_proyecto = cli.get_case_variable(case_id, "proyectoId")
+            if var_proyecto:
+                proyecto_id = var_proyecto.get("value")
+        except:
+            pass
+        
+        try:
+            var_pedido = cli.get_case_variable(case_id, "pedidoId")
+            if var_pedido:
+                pedido_id = var_pedido.get("value")
+        except:
+            pass
+        
+        try:
+            var_rol = cli.get_case_variable(case_id, "rol")
+            if var_rol:
+                rol_usuario = var_rol.get("value")
+        except:
+            pass
+
+        # Intentar buscar tarea ready (timeout corto)
         task = cli.wait_ready_task_in_case(
             case_id,
-            task_name=None,      # sin filtrar por nombre
-            timeout_sec=15,
+            task_name=None,
+            timeout_sec=3,  # Timeout más corto para retomar flujo
         )
-        if not task:
-            return JsonResponse(
-                {"ok": False, "error": "No apareció ninguna tarea ready para este caso."},
-                status=409,
-            )
-
-        name = (task.get("name") or task.get("displayName") or "").strip()
-
-        # Default
+        
+        # Variables por defecto
+        name = ""
         rol = "desconocido"
         url = f"/bonita/home/?case={case_id}"
 
-        if name == "Definir plan de trabajo y economico":
-            rol = "ong_originante"
-            url = f"/bonita/nuevo/?case={case_id}"
-        elif name == "Revisar proyectos":
-            rol = "red_ongs"
-            url = f"/bonita/revisar/?case={case_id}"
-        elif name == "Revisar proyecto y cargar observaciones":
-            rol = "consejo_directivo"
-            url = f"/bonita/consejo/?case={case_id}"
-        elif name == "Evaluar Respuestas":  
-            rol = "consejo_directivo"
-            url = f"/bonita/consejo/evaluar/?case={case_id}"
+        if task:
+            # Hay tarea ready, mapearla
+            name = (task.get("name") or task.get("displayName") or "").strip()
+            
+            # Mapeo de tareas
+            if name == "Definir plan de trabajo y economico":
+                rol = "ong_originante"
+                url = f"/bonita/nuevo/?case={case_id}"
+                
+            elif name == "Revisar proyectos":
+                rol = "red_ongs"
+                url = f"/bonita/revisar/?case={case_id}"
+                
+            elif name == "Registrar pedido":
+                rol = "ong_originante"
+                if proyecto_id:
+                    url = f"/bonita/pedido/?case={case_id}&proyecto={proyecto_id}"
+                else:
+                    url = f"/bonita/pedido/?case={case_id}"
+                    
+            elif name == "Revisar pedidos":
+                rol = "red_ongs"
+                if proyecto_id:
+                    url = f"/bonita/ver-pedidos/?case={case_id}&proyecto={proyecto_id}"
+                else:
+                    url = f"/bonita/ver-pedidos/?case={case_id}"
+                    
+            elif name == "Registrar compromiso":
+                rol = "red_ongs"
+                if proyecto_id and pedido_id:
+                    url = f"/bonita/compromiso/?case={case_id}&proyecto={proyecto_id}&pedido={pedido_id}"
+                else:
+                    url = f"/bonita/compromiso/?case={case_id}"
+            
+            elif name == "Evaluar propuestas":
+                rol = "ong_originante"
+                if proyecto_id:
+                    url = f"/bonita/evaluar/?case={case_id}&proyecto={proyecto_id}"
+                else:
+                    url = f"/bonita/evaluar/?case={case_id}"
+                    
+            elif name == "Monitorear ejecución / transparencia":
+                rol = "ong_originante"
+                if proyecto_id:
+                    url = f"/bonita/monitoreo/?case={case_id}&proyecto={proyecto_id}"
+                else:
+                    url = f"/bonita/monitoreo/?case={case_id}"
+                    
+            elif name == "Revisar proyecto y cargar observaciones":
+                rol = "consejo_directivo"
+                url = f"/bonita/consejo/?case={case_id}"
+                
+            elif name == "Evaluar Respuestas":  
+                rol = "consejo_directivo"
+                url = f"/bonita/consejo/evaluar/?case={case_id}"
+                
+            elif name == "Resolver observaciones":
+                rol = "ong_originante"
+                if proyecto_id:
+                    url = f"/bonita/monitoreo/?case={case_id}&proyecto={proyecto_id}"
+                else:
+                    url = f"/bonita/monitoreo/?case={case_id}"
+        else:
+            # No hay tarea ready, determinar estado del caso por variables
+            name = "Sin tarea ready - inferido por variables"
+            
+            # Si tiene proyectoId, probablemente está en alguna etapa del flujo
+            if proyecto_id:
+                # Determinar rol por la variable "rol" de Bonita
+                if rol_usuario:
+                    rol_lower = rol_usuario.lower()
+                    if "originante" in rol_lower:
+                        # ONG originante - llevar a monitoreo
+                        rol = "ong_originante"
+                        url = f"/bonita/monitoreo/?case={case_id}&proyecto={proyecto_id}"
+                        name = "Monitoreo (inferido - ONG Originante)"
+                    elif "red" in rol_lower or "ongs" in rol_lower:
+                        # Red de ONGs - llevar a revisar
+                        rol = "red_ongs"
+                        url = f"/bonita/revisar/?case={case_id}"
+                        name = "Revisar proyectos (inferido - Red ONGs)"
+                    elif "consejo" in rol_lower:
+                        # Consejo Directivo
+                        rol = "consejo_directivo"
+                        url = f"/bonita/consejo/?case={case_id}"
+                        name = "Consejo (inferido - Consejo Directivo)"
+                else:
+                    # Sin rol, pero tiene proyecto - asumir ONG originante y llevar a monitoreo
+                    rol = "ong_originante"
+                    url = f"/bonita/monitoreo/?case={case_id}&proyecto={proyecto_id}"
+                    name = "Monitoreo (inferido por proyecto)"
 
         return JsonResponse(
             {
@@ -220,6 +356,7 @@ def next_step_api(req: HttpRequest):
                 "tarea": name,
                 "rol": rol,
                 "url": url,
+                "proyectoId": proyecto_id,
             },
             status=200,
         )
@@ -234,6 +371,43 @@ def consejo_evaluar_page(req: HttpRequest):
         "case": req.GET.get("case", "")
     }
     return render(req, "bonita/consejo_evaluar.html", ctx)
+
+@csrf_exempt
+def debug_case_variables_api(req: HttpRequest):
+    """
+    Endpoint de debug para ver todas las variables de un caso.
+    """
+    case_id = (req.GET.get("case") or _json(req).get("caseId") or "").strip()
+    if not case_id:
+        return JsonResponse({"error": "Falta caseId"}, status=400)
+
+    try:
+        cli = BonitaClient()
+        cli.login()
+        
+        # Listar todas las variables del caso
+        r = cli.s.get(
+            f"{cli.api}/bpm/caseVariable",
+            params=[("p", "0"), ("c", "100"), ("f", f"case_id={case_id}")],
+            headers=cli._h(),
+            timeout=cli._timeout,
+        )
+        r.raise_for_status()
+        variables = r.json() if r.text else []
+        
+        # También obtener info del caso
+        case_info = cli.get_case(case_id)
+        
+        return JsonResponse({
+            "ok": True,
+            "caseId": case_id,
+            "caseInfo": case_info,
+            "variables": variables,
+            "totalVariables": len(variables)
+        })
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
+
 @csrf_exempt
 def obtener_datos_evaluacion_api(req: HttpRequest):
     """
