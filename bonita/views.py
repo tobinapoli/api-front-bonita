@@ -159,7 +159,7 @@ def login_api(req: HttpRequest):
             proc_name = getattr(settings, "BONITA_PROCESS_NAME", "ProjectPlanning")
             proc_version = getattr(settings, "BONITA_PROCESS_VERSION", "1.0")
 
-        # 1. Verificar si el usuario ya tiene una sesión activa para este proceso
+        # 1. Verificar si el usuario ya tiene una sesión activa PARA ESE PROCESO
         sesion = SesionBonita.objects.filter(
             api_username=api_user,
             proceso=proc_name
@@ -177,7 +177,7 @@ def login_api(req: HttpRequest):
                     case_id = sesion.case_id
                     caso_existente = True
                 else:
-                    # El caso está completado, eliminamos la sesión
+                    # El caso está completado o no sirve, eliminamos la sesión
                     sesion.delete()
             except Exception:
                 # El caso no existe en Bonita, eliminamos la sesión
@@ -199,14 +199,18 @@ def login_api(req: HttpRequest):
                 return JsonResponse({"ok": False, "error": "No se obtuvo caseId"}, status=500)
 
             # Guardar la sesión en la base de datos
+            # 🔴 IMPORTANTE: lookup SOLO por api_username, porque es unique=True.
+            # Así garantizamos UNA fila por usuario y vamos pisando proceso/case según lo último.
             SesionBonita.objects.update_or_create(
                 api_username=api_user,
-                proceso=proc_name,
-                defaults={"case_id": case_id}
+                defaults={
+                    "case_id": case_id,
+                    "proceso": proc_name,
+                },
             )
 
         return JsonResponse({
-            "ok": True, 
+            "ok": True,
             "caseId": case_id,
             "casoExistente": caso_existente
         }, status=200)
