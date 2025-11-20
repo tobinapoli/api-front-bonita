@@ -597,9 +597,11 @@ def elegir_proyecto_api(req: HttpRequest):
         "proyectoId": 11
       }
 
+    Ahora además setea seguirColaborando=True, porque al elegir un proyecto
+    la Red de ONGs decide seguir colaborando.
+
     Si la tarea 'Revisar proyectos' YA NO está ready (porque el flujo ya avanzó),
-    se considera OK igual y NO se devuelve error, para que el front pueda navegar
-    sin romperse aunque el usuario esté en pestañas viejas.
+    se considera OK igual.
     """
     if req.method != "POST":
         return JsonResponse({"error": "POST only"}, status=405)
@@ -630,15 +632,12 @@ def elegir_proyecto_api(req: HttpRequest):
                 status=500,
             )
 
-        # Buscar la tarea 'Revisar proyectos' en ese caso
         task = cli.wait_ready_task_in_case(
             case_id,
             task_name="Revisar proyectos",
             timeout_sec=15,
         )
 
-        # Si la tarea YA NO está ready, asumimos que ya se ejecutó antes.
-        # No lo tratamos como error para permitir navegación desde pestañas viejas.
         if not task:
             return JsonResponse(
                 {
@@ -650,12 +649,13 @@ def elegir_proyecto_api(req: HttpRequest):
                 status=200,
             )
 
-        # Si la tarea existe, la ejecutamos normalmente
         cli.assign_task(task["id"], user_id)
-        contract_payload = {"proyectoSeleccionadoId": proyecto_id_int}
+        contract_payload = {
+            "proyectoSeleccionadoId": proyecto_id_int,
+            "seguirColaborando": True,   # NUEVO: sigue colaborando
+        }
         cli.execute_task(task["id"], contract_payload)
 
-        # A partir de acá, el flujo en Bonita pasa a 'Revisar pedidos'
         return JsonResponse(
             {"ok": True, "caseId": case_id, "proyectoId": proyecto_id_int},
             status=200,
@@ -825,20 +825,19 @@ def registrar_compromiso_api(req: HttpRequest):
         "caseId": "...",
         "pedidoId": 6,
         "compromisoTipo": "...",
-        "compromisoDetalle": "..."
+        "compromisoDetalle": "...",
+        "seguirColaborando": true/false
       }
-
-    El conector de salida de esa tarea se encarga de hablar con la API JWT
-    para crear el compromiso asociado al pedido correspondiente.
     """
     if req.method != "POST":
         return JsonResponse({"error": "POST only"}, status=405)
 
     data = _json(req)
-    case_id     = str(data.get("caseId") or "").strip()
-    comp_tipo   = str(data.get("compromisoTipo") or "").strip()
+    case_id      = str(data.get("caseId") or "").strip()
+    comp_tipo    = str(data.get("compromisoTipo") or "").strip()
     comp_detalle = str(data.get("compromisoDetalle") or "").strip()
-    pedido_raw  = data.get("pedidoId")
+    pedido_raw   = data.get("pedidoId")
+    seguir_raw   = data.get("seguirColaborando", True)
 
     if not case_id:
         return JsonResponse({"ok": False, "error": "Falta caseId"}, status=400)
@@ -854,6 +853,17 @@ def registrar_compromiso_api(req: HttpRequest):
     except (TypeError, ValueError):
         return JsonResponse({"ok": False, "error": "pedidoId debe ser entero"}, status=400)
 
+    def _to_bool(v) -> bool:
+        if isinstance(v, bool):
+            return v
+        if isinstance(v, str):
+            return v.strip().lower() in ("1", "true", "t", "yes", "y", "si", "sí")
+        if isinstance(v, (int, float)):
+            return bool(v)
+        return False
+
+    seguir_colaborando = _to_bool(seguir_raw)
+
     try:
         cli = BonitaClient()
         cli.login()
@@ -866,7 +876,6 @@ def registrar_compromiso_api(req: HttpRequest):
                 status=500,
             )
 
-        # Buscar tarea "Registrar compromiso"
         task = cli.wait_ready_task_in_case(
             case_id,
             task_name="Registrar compromiso",
@@ -878,16 +887,16 @@ def registrar_compromiso_api(req: HttpRequest):
                 status=409,
             )
 
-        # Asignar y ejecutar con el contrato
         cli.assign_task(task["id"], user_id)
         payload_contrato = {
             "compromisoTipo": comp_tipo,
             "compromisoDetalle": comp_detalle,
             "pedidoId": pedido_id,
+            "seguirColaborando": seguir_colaborando,   # NUEVO
         }
         cli.execute_task(task["id"], payload_contrato)
 
-        # Opcional: leer lo que dejó el conector de salida
+        # (lo demás igual que antes)
         compromiso_id = None
         status_code_comp = None
         body_comp_json = None
@@ -935,7 +944,7 @@ def registrar_compromiso_api(req: HttpRequest):
         return JsonResponse(
             {"ok": False, "error": "Error integrando con Bonita", "detail": str(e)},
             status=500,
-        )
+        )   
 
 
 # --------------------------- API: Consejo Directivo ---------------------------
@@ -2033,4 +2042,84 @@ def finalizar_proyecto_api(req: HttpRequest):
             "error": "Error finalizando proyecto",
             "detail": str(e),
             "type": type(e).__name__
+        }, status=500)
+        
+@csrf_exempt
+def red_ongs_salir_api(req: HttpRequest):
+    """
+    Finaliza la colaboración de la Red de ONGs.
+    Ejecuta la tarea activa (cualquiera de las 3 del ciclo)
+    enviando seguirColaborando = false.
+    """
+    if req.method != "POST":
+        return JsonResponse({"error": "POST only"}, status=405)
+
+    data = _json(req)
+    case_id = str(data.get("caseId") or "").strip()
+
+    if not case_id:
+        return JsonResponse({"ok": False, "error": "Falta caseId"}, status=400)
+
+    try:
+        cli = BonitaClient()
+        cli.login()
+
+        assignee_username = getattr(settings, "BONITA_ASSIGNEE", "walter.bates")
+        user_id = cli.get_user_id_by_username(assignee_username)
+
+        # Buscar cualquier tarea del ciclo de Red de ONGs
+        posibles = [
+            "Revisar proyectos",
+            "Revisar pedidos",
+            "Registrar compromiso"
+        ]
+
+        tarea = None
+        for nombre in posibles:
+            tarea = cli.wait_ready_task_in_case(case_id, nombre, timeout_sec=2)
+            if tarea:
+                break
+
+        if not tarea:
+            return JsonResponse({
+                "ok": True,
+                "caseId": case_id,
+                "note": "No hay tareas de la Red de ONGs activas. Se asume finalizado."
+            })
+
+        # Ejecutar la tarea encontrada
+        cli.assign_task(tarea["id"], user_id)
+
+        # Armamos el contrato según la tarea
+        contract = {
+            "seguirColaborando": False
+        }
+
+        # Algunas tareas tienen campos obligatorios adicionales
+        nombre = tarea["name"]
+
+        if nombre == "Revisar proyectos":
+            contract["proyectoSeleccionadoId"] = 0
+
+        if nombre == "Revisar pedidos":
+            contract["verOtroProyecto"] = False
+
+        if nombre == "Registrar compromiso":
+            contract.setdefault("compromisoTipo", "")
+            contract.setdefault("compromisoDetalle", "")
+            contract.setdefault("pedidoId", 0)
+
+        cli.execute_task(tarea["id"], contract)
+
+        return JsonResponse({
+            "ok": True,
+            "caseId": case_id,
+            "mensaje": f"Tarea '{nombre}' ejecutada → colaboración finalizada."
+        })
+
+    except Exception as e:
+        return JsonResponse({
+            "ok": False,
+            "error": "Error integrando con Bonita",
+            "detail": str(e)
         }, status=500)

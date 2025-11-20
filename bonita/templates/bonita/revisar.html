@@ -11,6 +11,11 @@
 <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
   <div class="container">
     <a class="navbar-brand" href="/bonita/login/">ProjectPlanning</a>
+
+    <!-- NUEVO: botón para terminar la colaboración de la red -->
+    <button id="btnSalirRed" class="btn btn-outline-light btn-sm ms-auto" onclick="salirRed()">
+      Cerrar sesión Red de ONGs
+    </button>
   </div>
 </nav>
 
@@ -122,7 +127,6 @@
 
       let botonHTML = "";
 
-      // En planificación → ver pedidos (ejecuta la tarea 'Revisar proyectos')
       if (estado === "planificacion") {
         botonHTML = `
           <button class="btn btn-sm btn-outline-primary"
@@ -131,7 +135,6 @@
           </button>`;
       }
 
-      // En ejecución → monitoreo directo
       if (estado === "ejecucion") {
         botonHTML = `
           <button class="btn btn-sm btn-outline-success"
@@ -160,7 +163,7 @@
     panel.innerHTML = html;
   }
 
-  // Igual que la función "colaborar" vieja: ejecuta elegir-proyecto y va a ver pedidos
+  // Igual que antes: elige proyecto y dispara la tarea 'Revisar proyectos'
   async function verPedidos(proyectoId) {
     const caseId = qp("case");
     const rol    = qp("rol") || "red_ongs";
@@ -191,7 +194,6 @@
     location.href = url;
   }
 
-  // Monitoreo: sólo navegar, sin tocar el flujo
   function verMonitoreo(proyectoId) {
     const caseId = qp("case");
     if (!caseId) {
@@ -202,11 +204,54 @@
       `/bonita/monitoreo/?case=${encodeURIComponent(caseId)}&proyecto=${encodeURIComponent(proyectoId)}&rol=red_ongs`;
   }
 
+  // NUEVO: terminar colaboración de la Red de ONGs (seguirColaborando = false)
+  async function salirRed() {
+    const caseId = qp("case");
+    if (!caseId) {
+      alert("No se encontró el caseId en la URL.");
+      return;
+    }
+
+    if (!confirm("¿Seguro que querés terminar la colaboración de la Red de ONGs para este caso?")) {
+      return;
+    }
+
+    setMsg("");
+
+    const res = await fetch("/api/bonita/red-ongs/salir/", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({ caseId })
+    });
+
+    let j;
+    try {
+      j = await res.json();
+    } catch {
+      j = { ok: false, error: "Respuesta inválida del servidor" };
+    }
+
+    if (!res.ok || j.ok === false) {
+      setMsg(
+        `<div class="alert alert-danger">Error al finalizar colaboración: ${j.error || res.status}</div>`
+      );
+      return;
+    }
+
+    setMsg(
+      `<div class="alert alert-success">La Red de ONGs finalizó su colaboración en este caso.</div>`
+    );
+    setTimeout(() => {
+      window.location.href = "/bonita/login/";
+    }, 1500);
+  }
+
   document.getElementById("btnCargar").addEventListener("click", cargar);
   cargar();
 
   window.verPedidos   = verPedidos;
   window.verMonitoreo = verMonitoreo;
+  window.salirRed     = salirRed;
 </script>
 </body>
 </html>

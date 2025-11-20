@@ -23,6 +23,7 @@ from bonita.views import (
     revisar_compromisos_api,
     evaluar_propuestas_api,
     resumen_proyecto_api,
+    red_ongs_salir_api,          
 )
 
 urlpatterns = [
@@ -39,6 +40,13 @@ urlpatterns = [
     ),
     path("compromiso/",      registrar_compromiso_api,     name="bonita_compromiso_api"),
     path("next-step/",       next_step_api,                name="bonita_next_step"),
+
+    # 🔴 NUEVO: endpoint para cerrar colaboración de Red de ONGs
+    path(
+        "red-ongs/salir/",
+        red_ongs_salir_api,
+        name="bonita_red_ongs_salir",
+    ),
 
     # Consejo Directivo
     path("consejo/proyectos/", obtener_proyectos_en_ejecucion_api, name="bonita_consejo_proyectos"),
