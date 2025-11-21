@@ -17,9 +17,14 @@
     .badge-ejecucion {
       background-color: #198754;
     }
-    .observaciones-section {
-      background-color: #f8f9fa;
-      border-left: 4px solid #0d6efd;
+
+    body {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    main {
+      flex: 1;
     }
   </style>
 </head>
@@ -31,135 +36,137 @@
       <strong>ProjectPlanning</strong>
     </a>
     <span class="navbar-text text-white">
-      <i class="bi bi-shield-check"></i> Consejo Directivo
+      Consejo Directivo
     </span>
   </div>
 </nav>
 
-<div class="container py-4" style="max-width:1100px">
-  
-  <!-- Encabezado -->
-  <div class="card shadow-sm mb-4">
-    <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
-      <div>
-        <h4 class="mb-0">🔍 Revisión Bimensual de Proyectos</h4>
-        <small>Control y seguimiento - 2 veces al mes</small>
-      </div>
-      <div>
-        <button onclick="window.location.href='/bonita/dashboard/'" class="btn btn-light btn-sm me-2">
-          <i class="bi bi-graph-up"></i> Dashboard
-        </button>
-        <button id="btnCargar" class="btn btn-light btn-sm me-2">
-          <i class="bi bi-arrow-clockwise"></i> Actualizar
-        </button>
-        <button id="btnCerrarSesion" class="btn btn-danger btn-sm">
-          <i class="bi bi-box-arrow-right"></i> Cerrar Sesión
-        </button>
-      </div>
-    </div>
-    <div class="card-body">
-      <div class="alert alert-info mb-2">
-        <strong>Caso ID:</strong> <code id="caseOut">{{ case }}</code>
-      </div>
-      <div class="alert alert-warning mb-0">
-        <strong>📅 Importante:</strong> Como miembro del Consejo Directivo, tienes la responsabilidad de revisar los proyectos en ejecución 
-        <strong>dos veces por mes</strong> (aproximadamente cada 15 días). 
-        <br><br>
-        Tu rol es cargar observaciones y recomendaciones de mejora. Los ejecutores de cada proyecto 
-        tendrán un plazo de <strong>5 días hábiles</strong> para responder a tus observaciones.
-        <br><br>
-        <small class="text-muted">
-          <em>Según la normativa del proceso, estas revisiones periódicas aseguran la transparencia 
-          y el cumplimiento de objetivos en todos los proyectos de la red de ONGs.</em>
-        </small>
-      </div>
-    </div>
-  </div>
-
-  <!-- Panel de proyectos -->
-  <div id="panelProyectos" class="mb-4"></div>
-
-  <!-- Modal para ver observaciones existentes -->
-  <div class="modal fade" id="modalVerObservaciones" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-xl">
-      <div class="modal-content">
-        <div class="modal-header bg-info text-white">
-          <h5 class="modal-title">Observaciones del Proyecto</h5>
-          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+<main>
+  <div class="container py-4" style="max-width:1100px">
+    
+    <div class="card shadow-sm mb-4">
+      <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+        <div>
+          <h4 class="mb-0">Revisión Bimensual de Proyectos</h4>
+          <small>Control y seguimiento · 2 veces al mes</small>
         </div>
-        <div class="modal-body">
-          <div id="modalVerProyectoInfo" class="alert alert-secondary mb-3"></div>
-          <div id="listaObservaciones"></div>
+        <div>
+          <button onclick="window.location.href='/bonita/dashboard/'" class="btn btn-light btn-sm me-2">
+            Dashboard
+          </button>
+          <button id="btnCargar" class="btn btn-light btn-sm me-2">
+            Actualizar
+          </button>
+          <button id="btnCerrarSesion" class="btn btn-danger btn-sm">
+            Cerrar sesión
+          </button>
         </div>
-        <div class="modal-footer">
-          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+      </div>
+      <div class="card-body">
+        <div class="alert alert-warning mb-0">
+          <strong>Importante:</strong> Como miembro del Consejo Directivo, tenés la responsabilidad de revisar los proyectos en ejecución 
+          <strong>dos veces por mes</strong> (aproximadamente cada 15 días). 
+          <br><br>
+          Tu rol es cargar observaciones y recomendaciones de mejora. Los ejecutores de cada proyecto 
+          tendrán un plazo de <strong>5 días hábiles</strong> para responder a tus observaciones.
+          <br><br>
+          <small class="text-muted">
+            <em>Según la normativa del proceso, estas revisiones periódicas aseguran la transparencia 
+            y el cumplimiento de objetivos en todos los proyectos de la red de ONGs.</em>
+          </small>
         </div>
       </div>
     </div>
-  </div>
 
-  <!-- Modal para cargar observaciones -->
-  <div class="modal fade" id="modalObservaciones" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-lg">
-      <div class="modal-content">
-        <div class="modal-header bg-primary text-white">
-          <h5 class="modal-title">Cargar Nueva Observación</h5>
-          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-        </div>
-        <div class="modal-body">
-          <div id="modalProyectoInfo" class="alert alert-secondary mb-3"></div>
-          
-          <form id="formObservaciones">
-            <input type="hidden" id="modalProyectoId" name="proyectoId">
-            
-            <div class="mb-3">
-              <label for="observaciones" class="form-label">
-                <strong>Observaciones y recomendaciones:</strong>
-              </label>
-              <textarea 
-                id="observaciones" 
-                name="observaciones" 
-                class="form-control" 
-                rows="8" 
-                placeholder="Escribe aquí las observaciones sobre el proyecto, áreas de mejora, recomendaciones para los ejecutores, etc."
-                required
-              ></textarea>
-              <div class="form-text">
-                Las observaciones serán enviadas a los ejecutores del proyecto, 
-                quienes deberán responder en un plazo de 5 días.
-              </div>
-            </div>
+    <div id="panelProyectos" class="mb-4"></div>
 
-            <div class="alert alert-warning">
-              <small>
-                <strong>⚠️ Importante:</strong> Estas observaciones quedarán registradas 
-                y los responsables del proyecto serán notificados automáticamente. 
-                Tienen un plazo de <strong>5 días hábiles</strong> para responder según el SLA establecido.
-              </small>
-            </div>
-
-            <div id="modalMensaje" class="mt-3"></div>
-          </form>
-        </div>
-        <div class="modal-footer">
-          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
-          <div class="ms-auto">
-            <button type="button" class="btn btn-success me-2" id="btnEnviarYContinuar">
-              <i class="bi bi-send"></i> Enviar y Continuar Revisando
-            </button>
-            <button type="button" class="btn btn-primary" id="btnEnviarYTerminar">
-              <i class="bi bi-send-check"></i> Enviar y Terminar Sesión
-            </button>
+    <!-- Modal ver observaciones -->
+    <div class="modal fade" id="modalVerObservaciones" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+          <div class="modal-header bg-info text-white">
+            <h5 class="modal-title">Observaciones del proyecto</h5>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body">
+            <div id="modalVerProyectoInfo" class="alert alert-secondary mb-3"></div>
+            <div id="listaObservaciones"></div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
           </div>
         </div>
       </div>
     </div>
+
+    <!-- Modal cargar observaciones -->
+    <div class="modal fade" id="modalObservaciones" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+          <div class="modal-header bg-primary text-white">
+            <h5 class="modal-title">Cargar nueva observación</h5>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body">
+            <div id="modalProyectoInfo" class="alert alert-secondary mb-3"></div>
+            
+            <form id="formObservaciones">
+              <input type="hidden" id="modalProyectoId" name="proyectoId">
+              
+              <div class="mb-3">
+                <label for="observaciones" class="form-label">
+                  <strong>Observaciones y recomendaciones</strong>
+                </label>
+                <textarea 
+                  id="observaciones" 
+                  name="observaciones" 
+                  class="form-control" 
+                  rows="8" 
+                  placeholder="Escribí las observaciones sobre el proyecto, áreas de mejora, recomendaciones para los ejecutores, etc."
+                  required
+                ></textarea>
+                <div class="form-text">
+                  Las observaciones serán enviadas a los ejecutores del proyecto, 
+                  quienes deberán responder en un plazo de 5 días hábiles.
+                </div>
+              </div>
+
+              <div class="alert alert-warning">
+                <small>
+                  <strong>Importante:</strong> Estas observaciones quedarán registradas 
+                  y los responsables del proyecto serán notificados automáticamente. 
+                  Tienen un plazo de <strong>5 días hábiles</strong> para responder según el SLA establecido.
+                </small>
+              </div>
+
+              <div id="modalMensaje" class="mt-3"></div>
+            </form>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+            <div class="ms-auto">
+              <button type="button" class="btn btn-success me-2" id="btnEnviarYContinuar">
+                Enviar y continuar revisando
+              </button>
+              <button type="button" class="btn btn-primary" id="btnEnviarYTerminar">
+                Enviar y terminar sesión
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="msg" class="mt-3"></div>
+
   </div>
+</main>
 
-  <!-- Mensaje general -->
-  <div id="msg" class="mt-3"></div>
-
-</div>
+<footer class="mt-4 bg-light border-top py-3">
+  <div class="container text-center text-muted small">
+    © 2025 ProjectPlanning · Organizaciones sociales en red
+  </div>
+</footer>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script>
@@ -178,11 +185,22 @@
     }
   }
 
-  // Inicializar modales
   document.addEventListener('DOMContentLoaded', function() {
     modalObservaciones = new bootstrap.Modal(document.getElementById('modalObservaciones'));
     modalVerObservaciones = new bootstrap.Modal(document.getElementById('modalVerObservaciones'));
   });
+
+  // 🔁 Helper para restaurar botones del modal a su estado normal
+  function resetBotonesModal() {
+    const btnContinuar = document.getElementById("btnEnviarYContinuar");
+    const btnTerminar  = document.getElementById("btnEnviarYTerminar");
+    if (!btnContinuar || !btnTerminar) return;
+
+    btnContinuar.disabled = false;
+    btnTerminar.disabled  = false;
+    btnContinuar.innerHTML = "Enviar y continuar revisando";
+    btnTerminar.innerHTML  = "Enviar y terminar sesión";
+  }
 
   async function cargarProyectos() {
     const caseId = qp("case");
@@ -219,7 +237,6 @@
       if (proyectos.length === 0) {
         document.getElementById("panelProyectos").innerHTML =
           `<div class="alert alert-secondary text-center">
-            <i class="bi bi-inbox"></i>
             <h5 class="mt-2">No hay proyectos en ejecución</h5>
             <p class="mb-0">En este momento no existen proyectos que requieran revisión.</p>
           </div>`;
@@ -244,87 +261,80 @@
                                  (p.observaciones_vencidas || 0);
       const tieneObservaciones = totalObservaciones > 0;
       
-      // Las observaciones pendientes Y rechazadas bloquean la creación de nuevas
       const tieneObservacionesPendientes = (p.observaciones_pendientes || 0) > 0;
       const tieneObservacionesRechazadas = (p.observaciones_rechazadas || 0) > 0;
       const bloqueadoPorRespuestas = tieneObservacionesPendientes || tieneObservacionesRechazadas;
       
-      // Verificar límite mensual
       const limiteInfo = p.limite_observaciones || { puede_observar: true, observaciones_realizadas: 0 };
       const limiteAlcanzado = !limiteInfo.puede_observar;
-      
-      // El proyecto está bloqueado si tiene observaciones pendientes/rechazadas O si alcanzó el límite mensual
       const bloqueado = bloqueadoPorRespuestas || limiteAlcanzado;
       
-      // Formatear fecha de reseteo si existe
-      let fechaResetTexto = '';
+      let fechaResetTexto = "";
       if (limiteAlcanzado && limiteInfo.fecha_reset) {
         try {
           const fecha = new Date(limiteInfo.fecha_reset);
-          fechaResetTexto = fecha.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+          fechaResetTexto = fecha.toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit", year: "numeric" });
         } catch (e) {
-          fechaResetTexto = 'próximo mes';
+          fechaResetTexto = "próximo mes";
         }
       }
-      
+
+      const nombreProyecto = escapeHtml(p.nombre || "Proyecto sin nombre");
+      const descripcion = escapeHtml(p.descripcion || "");
+
       return `
       <div class="card proyecto-card shadow-sm mb-3">
         <div class="card-body">
           <div class="row">
             <div class="col-md-8">
               <h5 class="card-title mb-2">
-                ${escapeHtml(p.nombre || 'Proyecto sin nombre')}
+                <span class="small text-muted me-1">Nombre del proyecto:</span>
+                <span class="fw-semibold">${nombreProyecto}</span>
                 <span class="badge badge-ejecucion ms-2">En ejecución</span>
               </h5>
-              ${p.descripcion ? `<p class="card-text text-muted">${escapeHtml(p.descripcion)}</p>` : ''}
-              <div class="text-muted small mt-2">
-                <strong>ID:</strong> ${p.id ?? '-'}
-                ${p.fecha_inicio ? `<span class="ms-3"><strong>Inicio:</strong> ${formatearFecha(p.fecha_inicio)}</span>` : ''}
-              </div>
+              ${p.descripcion ? `<p class="card-text text-muted">${descripcion}</p>` : ""}
               ${tieneObservaciones ? `
                 <div class="mt-2">
                   <span class="badge bg-secondary me-1">📝 ${totalObservaciones} observaciones</span>
-                  ${p.observaciones_pendientes > 0 ? `<span class="badge bg-warning text-dark me-1">⏳ ${p.observaciones_pendientes} pendientes</span>` : ''}
-                  ${p.observaciones_rechazadas > 0 ? `<span class="badge bg-danger me-1">❌ ${p.observaciones_rechazadas} rechazadas</span>` : ''}
-                  ${p.observaciones_respondidas > 0 ? `<span class="badge bg-success me-1">✓ ${p.observaciones_respondidas} respondidas</span>` : ''}
-                  ${p.observaciones_vencidas > 0 ? `<span class="badge bg-danger me-1">⚠️ ${p.observaciones_vencidas} vencidas</span>` : ''}
+                  ${p.observaciones_pendientes > 0 ? `<span class="badge bg-warning text-dark me-1">⏳ ${p.observaciones_pendientes} pendientes</span>` : ""}
+                  ${p.observaciones_rechazadas > 0 ? `<span class="badge bg-danger me-1">❌ ${p.observaciones_rechazadas} rechazadas</span>` : ""}
+                  ${p.observaciones_respondidas > 0 ? `<span class="badge bg-success me-1">✓ ${p.observaciones_respondidas} respondidas</span>` : ""}
+                  ${p.observaciones_vencidas > 0 ? `<span class="badge bg-danger me-1">⚠️ ${p.observaciones_vencidas} vencidas</span>` : ""}
                 </div>
-              ` : ''}
+              ` : ""}
               
               ${bloqueadoPorRespuestas ? `
                 <div class="alert alert-warning mt-3 mb-0 py-2 small">
-                  <i class="bi bi-exclamation-triangle"></i> <strong>Atención:</strong> Este proyecto tiene observaciones 
-                  ${tieneObservacionesRechazadas ? 'rechazadas que deben ser corregidas' : 'pendientes de respuesta'}. 
+                  <strong>Atención:</strong> Este proyecto tiene observaciones 
+                  ${tieneObservacionesRechazadas ? "rechazadas que deben ser corregidas" : "pendientes de respuesta"}. 
                   No se pueden crear nuevas observaciones hasta que las actuales sean respondidas.
                 </div>
-              ` : ''}
+              ` : ""}
               
               ${limiteAlcanzado ? `
                 <div class="alert alert-info mt-3 mb-0 py-2 small">
-                  <i class="bi bi-calendar-check"></i> <strong>Límite mensual alcanzado:</strong> 
+                  <strong>Límite mensual alcanzado:</strong> 
                   Ya se realizaron ${limiteInfo.observaciones_realizadas} de 2 observaciones permitidas este mes para este proyecto.
-                  ${fechaResetTexto ? `<br><small class="text-muted">El contador se reseteará el ${fechaResetTexto}</small>` : ''}
+                  ${fechaResetTexto ? `<br><small class="text-muted">El contador se reseteará el ${fechaResetTexto}</small>` : ""}
                 </div>
               ` : limiteInfo.observaciones_realizadas > 0 ? `
                 <div class="alert alert-secondary mt-3 mb-0 py-2 small">
-                  <i class="bi bi-info-circle"></i> 
-                  Se ha${limiteInfo.observaciones_realizadas === 1 ? '' : 'n'} realizado ${limiteInfo.observaciones_realizadas} 
+                  Se ha${limiteInfo.observaciones_realizadas === 1 ? "" : "n"} realizado ${limiteInfo.observaciones_realizadas} 
                   de 2 observaciones permitidas este mes para este proyecto.
                 </div>
-              ` : ''}
+              ` : ""}
             </div>
             <div class="col-md-4 text-end d-flex align-items-center justify-content-end gap-2">
               ${tieneObservaciones ? `
-                <button class="btn btn-outline-primary" onclick="verObservaciones(${p.id}, '${escapeHtml(p.nombre || 'Proyecto sin nombre')}')">
-                  <i class="bi bi-eye"></i> Ver Observaciones
+                <button class="btn btn-outline-primary" onclick="verObservaciones(${p.id}, '${nombreProyecto}')">
+                  Ver observaciones
                 </button>
-              ` : ''}
+              ` : ""}
               ${!bloqueado ? `
-                <button class="btn btn-primary" onclick="abrirModalObservaciones(${p.id}, '${escapeHtml(p.nombre || 'Proyecto sin nombre')}', '${escapeHtml(p.descripcion || '')}')">
-                  <i class="bi bi-pencil-square"></i> ${tieneObservaciones ? 'Nueva Observación' : 'Crear Observación'}
+                <button class="btn btn-primary" onclick="abrirModalObservaciones(${p.id}, '${nombreProyecto}', '${descripcion}')">
+                  ${tieneObservaciones ? "Nueva observación" : "Crear observación"}
                 </button>
-              ` : ''}
-            </div>
+              ` : ""}
             </div>
           </div>
         </div>
@@ -333,7 +343,7 @@
     }).join("");
     
     document.getElementById("panelProyectos").innerHTML = `
-      <h5 class="mb-3">Proyectos Disponibles para Revisión (${proyectos.length})</h5>
+      <h5 class="mb-3">Proyectos disponibles para revisión (${proyectos.length})</h5>
       ${html}
     `;
   }
@@ -342,13 +352,15 @@
     proyectoActual = { id: proyectoId, nombre: nombre, descripcion: descripcion };
     
     document.getElementById("modalProyectoId").value = proyectoId;
-    document.getElementById("observaciones").value = '';
-    document.getElementById("modalMensaje").innerHTML = '';
+    document.getElementById("observaciones").value = "";
+    document.getElementById("modalMensaje").innerHTML = "";
+
+    // ✅ Siempre que abro el modal, restauro botones
+    resetBotonesModal();
     
     document.getElementById("modalProyectoInfo").innerHTML = `
-      <h6 class="mb-1">${escapeHtml(nombre)}</h6>
-      <small class="text-muted">ID del proyecto: ${proyectoId}</small>
-      ${descripcion ? `<p class="mb-0 mt-2 small">${escapeHtml(descripcion)}</p>` : ''}
+      <div><strong>Nombre del proyecto:</strong> ${nombre}</div>
+      ${descripcion ? `<p class="mb-0 mt-2 small">${descripcion}</p>` : ""}
     `;
     
     modalObservaciones.show();
@@ -361,14 +373,14 @@
     
     if (!observaciones) {
       document.getElementById("modalMensaje").innerHTML = 
-        `<div class="alert alert-warning">Por favor, escribe las observaciones antes de enviar.</div>`;
+        `<div class="alert alert-warning">Por favor, escribí las observaciones antes de enviar.</div>`;
       return;
     }
 
     const btnContinuar = document.getElementById("btnEnviarYContinuar");
-    const btnTerminar = document.getElementById("btnEnviarYTerminar");
+    const btnTerminar  = document.getElementById("btnEnviarYTerminar");
     btnContinuar.disabled = true;
-    btnTerminar.disabled = true;
+    btnTerminar.disabled  = true;
     
     const btnActivo = continuarRevisando ? btnContinuar : btnTerminar;
     const textoOriginal = btnActivo.innerHTML;
@@ -389,13 +401,12 @@
       const j = await res.json();
 
       if (!res.ok || !j.ok) {
-        // Verificar si es error de límite mensual (status 429)
-        if (res.status === 429 || (j.error && j.error.includes('Límite de observaciones'))) {
-          const fechaReset = j.fecha_reset ? new Date(j.fecha_reset).toLocaleDateString('es-AR') : 'próximo mes';
+        if (res.status === 429 || (j.error && j.error.includes("Límite de observaciones"))) {
+          const fechaReset = j.fecha_reset ? new Date(j.fecha_reset).toLocaleDateString("es-AR") : "próximo mes";
           document.getElementById("modalMensaje").innerHTML = 
             `<div class="alert alert-warning">
-              <h6 class="alert-heading">⚠️ Límite de observaciones mensuales alcanzado</h6>
-              <p class="mb-2">${j.detail || j.error || 'Ya se alcanzó el límite de 2 observaciones para este proyecto en el mes actual.'}</p>
+              <h6 class="alert-heading">Límite de observaciones mensuales alcanzado</h6>
+              <p class="mb-2">${j.detail || j.error || "Ya se alcanzó el límite de 2 observaciones para este proyecto en el mes actual."}</p>
               <hr>
               <p class="mb-0 small">
                 <strong>Observaciones realizadas:</strong> ${j.observaciones_realizadas || 2} de 2
@@ -406,40 +417,38 @@
         } else {
           document.getElementById("modalMensaje").innerHTML = 
             `<div class="alert alert-danger">
-              <strong>Error:</strong> ${j.error || 'No se pudieron enviar las observaciones'}
+              <strong>Error:</strong> ${j.error || "No se pudieron enviar las observaciones."}
             </div>`;
         }
-        btnContinuar.disabled = false;
-        btnTerminar.disabled = false;
-        btnActivo.innerHTML = textoOriginal;
+        // ✅ En error, restauro botones
+        resetBotonesModal();
         return;
       }
 
+      // ✅ En éxito también restauro antes de seguir
+      resetBotonesModal();
+
       if (continuarRevisando) {
-        // Cerrar modal y mostrar mensaje de éxito
         modalObservaciones.hide();
         setMsg(`
           <div class="alert alert-success alert-dismissible fade show">
-            <strong>✓ Observación enviada correctamente</strong>
-            <p class="mb-2">Los ejecutores del proyecto han sido notificados y tienen 5 días para responder.</p>
-            <p class="mb-0">
-              <strong>💡 Tip:</strong> Presiona <kbd>F5</kbd> para recargar y ver la lista actualizada de proyectos.
-            </p>
+            <strong>Observación enviada correctamente.</strong>
+            <p class="mb-2">Los ejecutores del proyecto fueron notificados y tienen 5 días hábiles para responder.</p>
             <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
           </div>
         `);
-        // Scroll hacia arriba para que vea el mensaje
-        window.scrollTo({ top: 0, behavior: 'smooth' });
+        window.scrollTo({ top: 0, behavior: "smooth" });
+        // opcional: refrescar la lista si querés actualizar contadores
+        // cargarProyectos();
       } else {
-        // Terminar sesión - redirigir al login o home
         document.getElementById("modalMensaje").innerHTML = 
           `<div class="alert alert-success">
-            <strong>✓ Observación enviada</strong>
+            <strong>Observación enviada.</strong>
             <p class="mb-0 small">Cerrando sesión...</p>
           </div>`;
         
         setTimeout(() => {
-          window.location.href = '/bonita/login/';
+          window.location.href = "/bonita/login/";
         }, 1000);
       }
 
@@ -448,23 +457,22 @@
         `<div class="alert alert-danger">
           <strong>Error de red:</strong> No se pudo conectar al servidor.
         </div>`;
-      btnContinuar.disabled = false;
-      btnTerminar.disabled = false;
-      btnActivo.innerHTML = textoOriginal;
+      // ✅ También en excepción
+      resetBotonesModal();
     }
   }
 
   function escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text;
+    const div = document.createElement("div");
+    div.textContent = text ?? "";
     return div.innerHTML;
   }
 
   function formatearFecha(fecha) {
-    if (!fecha) return '-';
+    if (!fecha) return "-";
     try {
       const d = new Date(fecha);
-      return d.toLocaleDateString('es-AR');
+      return d.toLocaleDateString("es-AR");
     } catch {
       return fecha;
     }
@@ -474,8 +482,7 @@
     const caseId = qp("case");
     
     document.getElementById("modalVerProyectoInfo").innerHTML = `
-      <h6 class="mb-1">${escapeHtml(nombreProyecto)}</h6>
-      <small class="text-muted">ID del proyecto: ${proyectoId}</small>
+      <div><strong>Nombre del proyecto:</strong> ${nombreProyecto}</div>
     `;
     
     document.getElementById("listaObservaciones").innerHTML = `
@@ -496,7 +503,7 @@
       if (!res.ok || !j.ok) {
         document.getElementById("listaObservaciones").innerHTML = `
           <div class="alert alert-danger">
-            <strong>Error:</strong> ${j.error || 'No se pudieron cargar las observaciones'}
+            <strong>Error:</strong> ${j.error || "No se pudieron cargar las observaciones."}
           </div>
         `;
         return;
@@ -507,21 +514,17 @@
       if (observaciones.length === 0) {
         document.getElementById("listaObservaciones").innerHTML = `
           <div class="alert alert-info text-center">
-            <i class="bi bi-inbox"></i>
             <p class="mb-0 mt-2">Este proyecto no tiene observaciones registradas.</p>
           </div>
         `;
         return;
       }
       
-      // Función para calcular días restantes si no vienen del backend
       const calcularDiasRestantes = (obs) => {
         if (obs.dias_restantes !== null && obs.dias_restantes !== undefined) {
           return obs.dias_restantes;
         }
-        
-        // Si no viene del backend, calcular manualmente
-        if (obs.fecha_vencimiento && (obs.estado === 'pendiente' || obs.estado === 'rechazada')) {
+        if (obs.fecha_vencimiento && (obs.estado === "pendiente" || obs.estado === "rechazada")) {
           try {
             const fechaVenc = new Date(obs.fecha_vencimiento);
             const ahora = new Date();
@@ -538,52 +541,50 @@
       const html = observaciones.map(obs => {
         const diasRestantes = calcularDiasRestantes(obs);
         
-        let estadoBadge = '';
-        if (obs.estado === 'pendiente') {
-          const diasTexto = diasRestantes !== null ? `${diasRestantes} días restantes` : 'pendiente';
-          estadoBadge = `<span class="badge bg-warning text-dark">⏳ Pendiente (${diasTexto})</span>`;
-        } else if (obs.estado === 'respondida') {
-          estadoBadge = `<span class="badge bg-success">✓ Respondida</span>`;
-        } else if (obs.estado === 'rechazada') {
-          const diasTexto = diasRestantes !== null && diasRestantes >= 0 ? ` - ${diasRestantes} días para corregir` : '';
-          estadoBadge = `<span class="badge bg-danger">❌ Rechazada (pendiente de corrección${diasTexto})</span>`;
-        } else if (obs.estado === 'aprobada') {
-          estadoBadge = `<span class="badge bg-success">✅ Aprobada</span>`;
-        } else if (obs.estado === 'vencida') {
-          estadoBadge = `<span class="badge bg-danger">⚠️ Vencida</span>`;
+        let estadoBadge = "";
+        if (obs.estado === "pendiente") {
+          const diasTexto = diasRestantes !== null ? `${diasRestantes} días restantes` : "pendiente";
+          estadoBadge = `<span class="badge bg-warning text-dark">Pendiente (${diasTexto})</span>`;
+        } else if (obs.estado === "respondida") {
+          estadoBadge = `<span class="badge bg-success">Respondida</span>`;
+        } else if (obs.estado === "rechazada") {
+          const diasTexto = diasRestantes !== null && diasRestantes >= 0 ? ` - ${diasRestantes} días para corregir` : "";
+          estadoBadge = `<span class="badge bg-danger">Rechazada${diasTexto}</span>`;
+        } else if (obs.estado === "aprobada") {
+          estadoBadge = `<span class="badge bg-success">Aprobada</span>`;
+        } else if (obs.estado === "vencida") {
+          estadoBadge = `<span class="badge bg-danger">Vencida</span>`;
         }
         
         return `
           <div class="card mb-3">
             <div class="card-header d-flex justify-content-between align-items-center">
               <div>
-                <strong>Observación #${obs.id}</strong>
-                <small class="text-muted ms-2">${formatearFecha(obs.fecha_creacion)}</small>
+                <small class="text-muted">${formatearFecha(obs.fecha_creacion)}</small>
               </div>
               ${estadoBadge}
             </div>
             <div class="card-body">
-              <h6>Observación del Consejo:</h6>
+              <h6>Observación del Consejo</h6>
               <p class="mb-3">${escapeHtml(obs.texto)}</p>
               
               ${obs.respuesta ? `
                 <hr>
-                <h6 class="text-success">Respuesta del Proyecto:</h6>
+                <h6 class="text-success">Respuesta de la ONG</h6>
                 <p class="mb-2">${escapeHtml(obs.respuesta)}</p>
                 <small class="text-muted">Respondida el: ${formatearFecha(obs.fecha_respuesta)}</small>
               ` : `
                 <div class="alert alert-warning mb-0">
                   <small>
-                    <strong>Pendiente de respuesta.</strong> 
-                    Vence el: ${formatearFecha(obs.fecha_vencimiento)}
-                    ${diasRestantes !== null && diasRestantes >= 0 ? `(quedan ${diasRestantes} días)` : diasRestantes !== null && diasRestantes < 0 ? '(vencida)' : ''}
+                    Pendiente de respuesta. Vence el: ${formatearFecha(obs.fecha_vencimiento)}
+                    ${diasRestantes !== null && diasRestantes >= 0 ? `(quedan ${diasRestantes} días)` : diasRestantes !== null && diasRestantes < 0 ? "(vencida)" : ""}
                   </small>
                 </div>
               `}
             </div>
           </div>
         `;
-      }).join('');
+      }).join("");
       
       document.getElementById("listaObservaciones").innerHTML = html;
       
@@ -596,7 +597,6 @@
     }
   }
 
-  // Event listeners
   document.getElementById("btnCargar").addEventListener("click", cargarProyectos);
   document.getElementById("btnCerrarSesion").addEventListener("click", cerrarSesionConsejo);
   document.getElementById("btnEnviarYContinuar").addEventListener("click", () => enviarObservaciones(true));
@@ -606,13 +606,13 @@
     const caseId = qp("case");
     
     if (!caseId) {
-      window.location.href = '/bonita/login/';
+      window.location.href = "/bonita/login/";
       return;
     }
 
     const confirmar = confirm(
-      "¿Estás seguro de que deseas cerrar la sesión?\n\n" +
-      "Esto finalizará el proceso de revisión del Consejo Directivo."
+      "¿Seguro que querés cerrar la sesión?\n\n" +
+      "Esto finaliza el proceso de revisión del Consejo Directivo."
     );
     
     if (!confirmar) return;
@@ -634,12 +634,12 @@
       if (j.ok) {
         setMsg(`
           <div class="alert alert-success">
-            <strong>✓ Sesión cerrada correctamente</strong>
+            <strong>Sesión cerrada correctamente.</strong>
             <p class="mb-0 small">Redirigiendo...</p>
           </div>
         `);
         setTimeout(() => {
-          window.location.href = '/bonita/login/';
+          window.location.href = "/bonita/login/";
         }, 1000);
       } else {
         alert("Error al cerrar sesión: " + (j.error || "Desconocido"));
