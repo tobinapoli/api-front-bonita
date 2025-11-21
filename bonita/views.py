@@ -1871,7 +1871,116 @@ def dashboard_datos_api(req: HttpRequest):
                 })
 
         # ========================================
-        # 9. OBSERVACIONES RECIENTES (últimas 10)
+        # 9. TOP 3 TIPOS DE PEDIDOS Y TOP 3 USUARIOS POR TIPO
+        # ========================================
+
+        # Primero, obtener los usernames desde Bonita para los compromisos
+        try:
+            cli = BonitaClient()
+            cli.login()
+
+            # Crear cache de usernames por case_id y compromiso_id
+            username_cache = {}
+
+            # Obtener sesiones activas para mapear compromisos a casos
+            from bonita.models import SesionBonita
+            sesiones = SesionBonita.objects.all()
+
+            for compromiso in compromisos:
+                comp_id = compromiso.get('id')
+                if not comp_id:
+                    continue
+
+                # Buscar en todas las sesiones la que tenga este compromiso
+                for sesion in sesiones:
+                    try:
+                        # Obtener tareas archivadas del caso donde se registró el compromiso
+                        archived_tasks = cli.get_archived_tasks_by_case(
+                            sesion.case_id,
+                            "Registrar compromiso"
+                        )
+
+                        for task in archived_tasks:
+                            # executedBy contiene el user_id del que completó la tarea
+                            executed_by = task.get('executedBy')
+                            if executed_by:
+                                user_info = cli.get_user_by_id(str(executed_by))
+                                if user_info:
+                                    username = user_info.get('userName', 'Usuario desconocido')
+                                    # Guardar en cache usando el compromiso_id como clave
+                                    username_cache[comp_id] = username
+                                    break
+                    except Exception:
+                        continue
+
+                    if comp_id in username_cache:
+                        break
+        except Exception as e:
+            print(f"Error obteniendo usuarios de Bonita: {e}")
+            username_cache = {}
+
+        # Contar pedidos por tipo
+        pedidos_por_tipo = {}
+        for pedido in pedidos:
+            tipo = pedido.get('tipo', 'Sin tipo')
+            if tipo:
+                pedidos_por_tipo[tipo] = pedidos_por_tipo.get(tipo, 0) + 1
+
+        # Ordenar por cantidad y tomar top 3
+        top_3_tipos = sorted(pedidos_por_tipo.items(), key=lambda x: x[1], reverse=True)[:3]
+
+        # Para cada tipo, calcular top 3 de usuarios con más compromisos
+        top_tipos_pedidos = []
+        for tipo, cantidad_pedidos in top_3_tipos:
+            # Obtener pedidos de este tipo
+            pedidos_del_tipo = [p for p in pedidos if p.get('tipo') == tipo]
+            pedidos_ids_del_tipo = [p.get('id') for p in pedidos_del_tipo]
+
+            # Contar compromisos por usuario para este tipo de pedido
+            compromisos_por_usuario = {}
+            for compromiso in compromisos:
+                pedido_id = compromiso.get('pedidoId')
+                if pedido_id in pedidos_ids_del_tipo:
+                    comp_id = compromiso.get('id')
+                    # Intentar obtener username del cache de Bonita, sino usar fallback
+                    usuario = username_cache.get(comp_id) or compromiso.get('usuario_nombre') or compromiso.get(
+                        'usuario') or 'Usuario desconocido'
+                    monto = compromiso.get('monto', 0)
+
+                    if usuario not in compromisos_por_usuario:
+                        compromisos_por_usuario[usuario] = {
+                            'cantidad': 0,
+                            'monto_total': Decimal('0')
+                        }
+
+                    compromisos_por_usuario[usuario]['cantidad'] += 1
+                    try:
+                        compromisos_por_usuario[usuario]['monto_total'] += Decimal(str(monto))
+                    except:
+                        pass
+
+            # Ordenar por cantidad de compromisos y tomar top 3
+            top_usuarios = sorted(
+                compromisos_por_usuario.items(),
+                key=lambda x: x[1]['cantidad'],
+                reverse=True
+            )[:3]
+
+            top_tipos_pedidos.append({
+                'tipo': tipo,
+                'cantidad_pedidos': cantidad_pedidos,
+                'top_usuarios': [
+                    {
+                        'usuario': usuario,
+                        'cantidad_compromisos': data['cantidad'],
+                        'monto_total': float(data['monto_total'])
+                    }
+                    for usuario, data in top_usuarios
+                ]
+            })
+
+        # ========================================
+        # 10. OBSERVACIONES RECIENTES (últimas 10)
         # ========================================
 
         observaciones_recientes = []
@@ -1950,7 +2059,8 @@ def dashboard_datos_api(req: HttpRequest):
                 "metricas": metricas,
                 "top_proyectos_observaciones": top_proyectos_obs,
                 "top_proyectos_compromisos": top_proyectos_comp,
-                "observaciones_recientes": observaciones_recientes
+                "observaciones_recientes": observaciones_recientes,
+                "top_tipos_pedidos": top_tipos_pedidos,
             }
         }, status=200)
 

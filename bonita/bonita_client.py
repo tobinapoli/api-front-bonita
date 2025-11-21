@@ -233,3 +233,67 @@ class BonitaClient:
             timeout=self._timeout,
         )
         r.raise_for_status()
+
+    def update_case_variable(self, case_id: str, var_name: str, value: Any) -> None:
+        """
+        Actualiza una variable de caso existente usando el tipo real
+        que ya tiene en Bonita.
+
+        Lee primero la variable para conocer el 'type' y luego hace PUT
+        con ese mismo tipo y el nuevo valor.
+        """
+        current = self.get_case_variable(case_id, var_name)
+        if not current:
+            raise ValueError(f"Variable de caso '{var_name}' no encontrada en case {case_id}")
+
+        var_type = current.get("type") or "java.lang.String"
+
+        payload = {
+            "type": var_type,
+            "value": value,
+        }
+
+        r = self.s.put(
+            f"{self.api}/bpm/caseVariable/{case_id}/{var_name}",
+            json=payload,
+            headers=self._h(),
+            timeout=self._timeout,
+        )
+        r.raise_for_status()
+
+    def get_archived_tasks_by_case(self, case_id: str, task_name: Optional[str] = None) -> list:
+        """
+        Obtiene las tareas archivadas (completadas) de un caso específico.
+        Opcionalmente filtra por nombre de tarea.
+        """
+        params = [
+            ("f", f"caseId={case_id}"),
+            ("p", "0"),
+            ("c", "100"),
+        ]
+        if task_name:
+            params.append(("f", f"name={task_name}"))
+
+        r = self.s.get(
+            f"{self.api}/bpm/archivedHumanTask",
+            params=params,
+            headers=self._h(),
+            timeout=self._timeout,
+        )
+        r.raise_for_status()
+        return self._json(r) or []
+
+    def get_user_by_id(self, user_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Obtiene la información completa de un usuario por su ID.
+        Devuelve un dict con userName, firstName, lastName, etc.
+        """
+        r = self.s.get(
+            f"{self.api}/identity/user/{user_id}",
+            headers=self._h(),
+            timeout=self._timeout,
+        )
+        if r.status_code == 404:
+            return None
+        r.raise_for_status()
+        return self._json(r)

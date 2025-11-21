@@ -1,568 +1,606 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Tablero Gerencial - Consejo Directivo</title>
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-  <style>
-    .metric-card {
-      transition: all 0.3s ease;
-      border-left: 4px solid #0d6efd;
-    }
-    .metric-card:hover {
-      transform: translateY(-5px);
-      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-    }
-    .metric-value {
-      font-size: 2.5rem;
-      font-weight: bold;
-      color: #0d6efd;
-    }
-    .metric-label {
-      font-size: 0.9rem;
-      color: #6c757d;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-    }
-    .chart-container {
-      position: relative;
-      height: 300px;
-    }
-    .loading-spinner {
-      display: none;
-      text-align: center;
-      padding: 50px;
-    }
-    .table-responsive {
-      max-height: 400px;
-      overflow-y: auto;
-    }
-  </style>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Tablero Gerencial - Consejo Directivo</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <style>
+        .metric-card {
+            transition: all 0.3s ease;
+            border-left: 4px solid #0d6efd;
+        }
+
+        .metric-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        }
+
+        .metric-value {
+            font-size: 2.5rem;
+            font-weight: bold;
+            color: #0d6efd;
+        }
+
+        .metric-label {
+            font-size: 0.9rem;
+            color: #6c757d;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .chart-container {
+            position: relative;
+            height: 300px;
+        }
+
+        .loading-spinner {
+            display: none;
+            text-align: center;
+            padding: 50px;
+        }
+
+        .table-responsive {
+            max-height: 400px;
+            overflow-y: auto;
+        }
+    </style>
 </head>
 <body class="bg-light">
 
 <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
-  <div class="container-fluid">
-    <a class="navbar-brand" href="/bonita/login/">
-      <strong>ProjectPlanning</strong>
-    </a>
-    <span class="navbar-text text-white">
+    <div class="container-fluid">
+        <a class="navbar-brand" href="/bonita/login/">
+            <strong>ProjectPlanning</strong>
+        </a>
+        <span class="navbar-text text-white">
       <i class="bi bi-graph-up"></i> Tablero Gerencial - Consejo Directivo
     </span>
-    <button class="btn btn-outline-light btn-sm ms-auto" onclick="window.location.href='/bonita/login/'">
-      <i class="bi bi-arrow-left"></i> Volver
-    </button>
-  </div>
+        <button class="btn btn-outline-light btn-sm ms-auto" onclick="window.location.href='/bonita/login/'">
+            <i class="bi bi-arrow-left"></i> Volver
+        </button>
+    </div>
 </nav>
 
 <div class="container-fluid py-4">
-  
-  <!-- Encabezado -->
-  <div class="row mb-4">
-    <div class="col-12">
-      <div class="card shadow-sm">
-        <div class="card-body">
-          <h3 class="card-title mb-1">📊 Tablero de Consultas Gerenciales</h3>
-          <p class="text-muted mb-0">Vista consolidada de métricas y KPIs del sistema</p>
-          <small class="text-muted">Última actualización: <span id="lastUpdate"></span></small>
-        </div>
-      </div>
-    </div>
-  </div>
 
-  <!-- Loading Spinner -->
-  <div id="loadingSpinner" class="loading-spinner">
-    <div class="spinner-border text-primary" role="status">
-      <span class="visually-hidden">Cargando...</span>
-    </div>
-    <p class="mt-3 text-muted">Cargando datos del tablero...</p>
-  </div>
-
-  <!-- Contenedor de métricas -->
-  <div id="dashboardContent" style="display: none;">
-    
-    <!-- Métricas Principales -->
+    <!-- Encabezado -->
     <div class="row mb-4">
-      <div class="col-12">
-        <h5 class="mb-3"><i class="bi bi-speedometer2"></i> Métricas Principales</h5>
-      </div>
-      
-      <div class="col-md-3">
-        <div class="card metric-card shadow-sm">
-          <div class="card-body text-center">
-            <div class="metric-value" id="metricTotalProyectos">0</div>
-            <div class="metric-label">Total Proyectos</div>
-            <small class="text-muted">Todos los estados</small>
-          </div>
+        <div class="col-12">
+            <div class="card shadow-sm">
+                <div class="card-body">
+                    <h3 class="card-title mb-1">📊 Tablero de Consultas Gerenciales</h3>
+                    <p class="text-muted mb-0">Vista consolidada de métricas y KPIs del sistema</p>
+                    <small class="text-muted">Última actualización: <span id="lastUpdate"></span></small>
+                </div>
+            </div>
         </div>
-      </div>
-      
-      <div class="col-md-3">
-        <div class="card metric-card shadow-sm">
-          <div class="card-body text-center">
-            <div class="metric-value text-success" id="metricProyectosFinalizados">0</div>
-            <div class="metric-label">Proyectos Finalizados</div>
-            <small class="text-muted">Estado: finalizado</small>
-          </div>
-        </div>
-      </div>
-      
-      <div class="col-md-3">
-        <div class="card metric-card shadow-sm">
-          <div class="card-body text-center">
-            <div class="metric-value text-warning" id="metricProyectosEjecucion">0</div>
-            <div class="metric-label">En Ejecución</div>
-            <small class="text-muted">Estado: ejecución</small>
-          </div>
-        </div>
-      </div>
-      
-      <div class="col-md-3">
-        <div class="card metric-card shadow-sm">
-          <div class="card-body text-center">
-            <div class="metric-value text-info" id="metricTotalObservaciones">0</div>
-            <div class="metric-label">Total Observaciones</div>
-            <small class="text-muted">Todas las observaciones</small>
-          </div>
-        </div>
-      </div>
     </div>
 
-    <!-- Gráficos -->
-    <div class="row mb-4">
-      <div class="col-md-6">
-        <div class="card shadow-sm">
-          <div class="card-header bg-primary text-white">
-            <h6 class="mb-0"><i class="bi bi-pie-chart"></i> Distribución de Proyectos por Estado</h6>
-          </div>
-          <div class="card-body">
-            <div class="chart-container">
-              <canvas id="chartProyectosEstado"></canvas>
-            </div>
-          </div>
+    <!-- Loading Spinner -->
+    <div id="loadingSpinner" class="loading-spinner">
+        <div class="spinner-border text-primary" role="status">
+            <span class="visually-hidden">Cargando...</span>
         </div>
-      </div>
-      
-      <div class="col-md-6">
-        <div class="card shadow-sm">
-          <div class="card-header bg-success text-white">
-            <h6 class="mb-0"><i class="bi bi-bar-chart"></i> Observaciones por Estado</h6>
-          </div>
-          <div class="card-body">
-            <div class="chart-container">
-              <canvas id="chartObservacionesEstado"></canvas>
-            </div>
-          </div>
-        </div>
-      </div>
+        <p class="mt-3 text-muted">Cargando datos del tablero...</p>
     </div>
 
-    <!-- Tabla de Proyectos con más Observaciones -->
-    <div class="row mb-4">
-      <div class="col-md-6">
-        <div class="card shadow-sm">
-          <div class="card-header bg-warning text-dark">
-            <h6 class="mb-0"><i class="bi bi-exclamation-triangle"></i> Top 5 Proyectos con más Observaciones</h6>
-          </div>
-          <div class="card-body">
-            <div class="table-responsive">
-              <table class="table table-sm table-hover">
-                <thead>
-                  <tr>
-                    <th>Proyecto</th>
-                    <th>Estado</th>
-                    <th class="text-end">Observaciones</th>
-                  </tr>
-                </thead>
-                <tbody id="tableTopObservaciones">
-                  <tr><td colspan="3" class="text-center text-muted">Cargando...</td></tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      </div>
+    <!-- Contenedor de métricas -->
+    <div id="dashboardContent" style="display: none;">
 
-      <div class="col-md-6">
-        <div class="card shadow-sm">
-          <div class="card-header bg-info text-white">
-            <h6 class="mb-0"><i class="bi bi-hand-thumbs-up"></i> Top 5 Proyectos con más Compromisos</h6>
-          </div>
-          <div class="card-body">
-            <div class="table-responsive">
-              <table class="table table-sm table-hover">
-                <thead>
-                  <tr>
-                    <th>Proyecto</th>
-                    <th class="text-end">Total Pedidos</th>
-                    <th class="text-end">Compromisos</th>
-                  </tr>
-                </thead>
-                <tbody id="tableTopCompromisos">
-                  <tr><td colspan="3" class="text-center text-muted">Cargando...</td></tr>
-                </tbody>
-              </table>
+        <!-- Métricas Principales -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <h5 class="mb-3"><i class="bi bi-speedometer2"></i> Métricas Principales</h5>
             </div>
-          </div>
+
+            <div class="col-md-3">
+                <div class="card metric-card shadow-sm">
+                    <div class="card-body text-center">
+                        <div class="metric-value" id="metricTotalProyectos">0</div>
+                        <div class="metric-label">Total Proyectos</div>
+                        <small class="text-muted">Todos los estados</small>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-3">
+                <div class="card metric-card shadow-sm">
+                    <div class="card-body text-center">
+                        <div class="metric-value text-success" id="metricProyectosFinalizados">0</div>
+                        <div class="metric-label">Proyectos Finalizados</div>
+                        <small class="text-muted">Estado: finalizado</small>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-3">
+                <div class="card metric-card shadow-sm">
+                    <div class="card-body text-center">
+                        <div class="metric-value text-warning" id="metricProyectosEjecucion">0</div>
+                        <div class="metric-label">En Ejecución</div>
+                        <small class="text-muted">Estado: ejecución</small>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-3">
+                <div class="card metric-card shadow-sm">
+                    <div class="card-body text-center">
+                        <div class="metric-value text-info" id="metricTotalObservaciones">0</div>
+                        <div class="metric-label">Total Observaciones</div>
+                        <small class="text-muted">Todas las observaciones</small>
+                    </div>
+                </div>
+            </div>
         </div>
-      </div>
+
+        <!-- Gráficos -->
+        <div class="row mb-4">
+            <div class="col-md-6">
+                <div class="card shadow-sm">
+                    <div class="card-header bg-primary text-white">
+                        <h6 class="mb-0"><i class="bi bi-pie-chart"></i> Distribución de Proyectos por Estado</h6>
+                    </div>
+                    <div class="card-body">
+                        <div class="chart-container">
+                            <canvas id="chartProyectosEstado"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-6">
+                <div class="card shadow-sm">
+                    <div class="card-header bg-success text-white">
+                        <h6 class="mb-0"><i class="bi bi-bar-chart"></i> Observaciones por Estado</h6>
+                    </div>
+                    <div class="card-body">
+                        <div class="chart-container">
+                            <canvas id="chartObservacionesEstado"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tabla de Proyectos con más Observaciones -->
+        <div class="row mb-4">
+            <div class="col-md-6">
+                <div class="card shadow-sm">
+                    <div class="card-header bg-warning text-dark">
+                        <h6 class="mb-0"><i class="bi bi-exclamation-triangle"></i> Top 5 Proyectos con más
+                            Observaciones</h6>
+                    </div>
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table table-sm table-hover">
+                                <thead>
+                                <tr>
+                                    <th>Proyecto</th>
+                                    <th>Estado</th>
+                                    <th class="text-end">Observaciones</th>
+                                </tr>
+                                </thead>
+                                <tbody id="tableTopObservaciones">
+                                <tr>
+                                    <td colspan="3" class="text-center text-muted">Cargando...</td>
+                                </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-6">
+                <div class="card shadow-sm">
+                    <div class="card-header bg-info text-white">
+                        <h6 class="mb-0"><i class="bi bi-hand-thumbs-up"></i> Top 5 Proyectos con más Compromisos</h6>
+                    </div>
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table table-sm table-hover">
+                                <thead>
+                                <tr>
+                                    <th>Proyecto</th>
+                                    <th class="text-end">Total Pedidos</th>
+                                    <th class="text-end">Compromisos</th>
+                                </tr>
+                                </thead>
+                                <tbody id="tableTopCompromisos">
+                                <tr>
+                                    <td colspan="3" class="text-center text-muted">Cargando...</td>
+                                </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Métricas de Pedidos y Compromisos -->
+        <div class="row mb-4">
+            <div class="col-md-4">
+                <div class="card shadow-sm">
+                    <div class="card-header bg-secondary text-white">
+                        <h6 class="mb-0"><i class="bi bi-clipboard-check"></i> Métricas de Pedidos</h6>
+                    </div>
+                    <div class="card-body">
+                        <div class="row text-center">
+                            <div class="col-6 mb-3">
+                                <div class="metric-value" style="font-size: 1.8rem;" id="metricTotalPedidos">0</div>
+                                <div class="metric-label" style="font-size: 0.75rem;">Total Pedidos</div>
+                            </div>
+                            <div class="col-6 mb-3">
+                                <div class="metric-value text-success" style="font-size: 1.8rem;"
+                                     id="metricPedidosAbiertos">0
+                                </div>
+                                <div class="metric-label" style="font-size: 0.75rem;">Pedidos Abiertos</div>
+                            </div>
+                        </div>
+                        <div class="progress" style="height: 25px;">
+                            <div id="progressPedidosAbiertos" class="progress-bar bg-success" role="progressbar"
+                                 style="width: 0%">0%
+                            </div>
+                        </div>
+                        <small class="text-muted d-block mt-2">Porcentaje de pedidos abiertos</small>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-4">
+                <div class="card shadow-sm">
+                    <div class="card-header bg-secondary text-white">
+                        <h6 class="mb-0"><i class="bi bi-check2-circle"></i> Métricas de Compromisos</h6>
+                    </div>
+                    <div class="card-body">
+                        <div class="row text-center">
+                            <div class="col-6 mb-3">
+                                <div class="metric-value" style="font-size: 1.8rem;" id="metricTotalCompromisos">0</div>
+                                <div class="metric-label" style="font-size: 0.75rem;">Total Compromisos</div>
+                            </div>
+                            <div class="col-6 mb-3">
+                                <div class="metric-value text-success" style="font-size: 1.8rem;"
+                                     id="metricCompromisosCumplidos">0
+                                </div>
+                                <div class="metric-label" style="font-size: 0.75rem;">Cumplidos</div>
+                            </div>
+                        </div>
+                        <div class="progress" style="height: 25px;">
+                            <div id="progressCompromisosCumplidos" class="progress-bar bg-success" role="progressbar"
+                                 style="width: 0%">0%
+                            </div>
+                        </div>
+                        <small class="text-muted d-block mt-2">Tasa de cumplimiento</small>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-4">
+                <div class="card shadow-sm">
+                    <div class="card-header bg-secondary text-white">
+                        <h6 class="mb-0"><i class="bi bi-cash-coin"></i> Monto Total Comprometido</h6>
+                    </div>
+                    <div class="card-body text-center">
+                        <div class="metric-value text-success" style="font-size: 2rem;" id="metricMontoTotal">$0</div>
+                        <div class="metric-label">En compromisos</div>
+                        <hr>
+                        <small class="text-muted">
+                            <strong>Promedio por compromiso:</strong><br>
+                            <span id="metricMontoPromedio" class="text-primary">$0</span>
+                        </small>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Top 3 Tipos de Pedidos -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="card shadow-sm">
+                    <div class="card-header bg-primary text-white">
+                        <h6 class="mb-0"><i class="bi bi-trophy"></i> Top 3 Tipos de Pedidos más Solicitados</h6>
+                    </div>
+                    <div class="card-body">
+                        <div id="topTiposPedidos">
+                            <p class="text-center text-muted">Cargando...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tabla de Observaciones Recientes -->
+        <div class="row">
+            <div class="col-12">
+                <div class="card shadow-sm">
+                    <div class="card-header bg-dark text-white">
+                        <h6 class="mb-0"><i class="bi bi-clock-history"></i> Observaciones Recientes (Últimas 10)</h6>
+                    </div>
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table table-sm table-striped">
+                                <thead>
+                                <tr>
+                                    <th>#</th>
+                                    <th>Proyecto</th>
+                                    <th>Estado</th>
+                                    <th>Fecha Creación</th>
+                                    <th>Días Restantes</th>
+                                </tr>
+                                </thead>
+                                <tbody id="tableObservacionesRecientes">
+                                <tr>
+                                    <td colspan="5" class="text-center text-muted">Cargando...</td>
+                                </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
     </div>
 
-    <!-- Métricas de Pedidos y Compromisos -->
-    <div class="row mb-4">
-      <div class="col-md-4">
-        <div class="card shadow-sm">
-          <div class="card-header bg-secondary text-white">
-            <h6 class="mb-0"><i class="bi bi-clipboard-check"></i> Métricas de Pedidos</h6>
-          </div>
-          <div class="card-body">
-            <div class="row text-center">
-              <div class="col-6 mb-3">
-                <div class="metric-value" style="font-size: 1.8rem;" id="metricTotalPedidos">0</div>
-                <div class="metric-label" style="font-size: 0.75rem;">Total Pedidos</div>
-              </div>
-              <div class="col-6 mb-3">
-                <div class="metric-value text-success" style="font-size: 1.8rem;" id="metricPedidosAbiertos">0</div>
-                <div class="metric-label" style="font-size: 0.75rem;">Pedidos Abiertos</div>
-              </div>
-            </div>
-            <div class="progress" style="height: 25px;">
-              <div id="progressPedidosAbiertos" class="progress-bar bg-success" role="progressbar" style="width: 0%">0%</div>
-            </div>
-            <small class="text-muted d-block mt-2">Porcentaje de pedidos abiertos</small>
-          </div>
-        </div>
-      </div>
-
-      <div class="col-md-4">
-        <div class="card shadow-sm">
-          <div class="card-header bg-secondary text-white">
-            <h6 class="mb-0"><i class="bi bi-check2-circle"></i> Métricas de Compromisos</h6>
-          </div>
-          <div class="card-body">
-            <div class="row text-center">
-              <div class="col-6 mb-3">
-                <div class="metric-value" style="font-size: 1.8rem;" id="metricTotalCompromisos">0</div>
-                <div class="metric-label" style="font-size: 0.75rem;">Total Compromisos</div>
-              </div>
-              <div class="col-6 mb-3">
-                <div class="metric-value text-success" style="font-size: 1.8rem;" id="metricCompromisosCumplidos">0</div>
-                <div class="metric-label" style="font-size: 0.75rem;">Cumplidos</div>
-              </div>
-            </div>
-            <div class="progress" style="height: 25px;">
-              <div id="progressCompromisosCumplidos" class="progress-bar bg-success" role="progressbar" style="width: 0%">0%</div>
-            </div>
-            <small class="text-muted d-block mt-2">Tasa de cumplimiento</small>
-          </div>
-        </div>
-      </div>
-
-      <div class="col-md-4">
-        <div class="card shadow-sm">
-          <div class="card-header bg-secondary text-white">
-            <h6 class="mb-0"><i class="bi bi-cash-coin"></i> Monto Total Comprometido</h6>
-          </div>
-          <div class="card-body text-center">
-            <div class="metric-value text-success" style="font-size: 2rem;" id="metricMontoTotal">$0</div>
-            <div class="metric-label">En compromisos</div>
+    <!-- Mensaje de Error -->
+    <div id="errorContainer" style="display: none;">
+        <div class="alert alert-danger" role="alert">
+            <h4 class="alert-heading"><i class="bi bi-exclamation-triangle"></i> Error al cargar el tablero</h4>
+            <p id="errorMessage"></p>
             <hr>
-            <small class="text-muted">
-              <strong>Promedio por compromiso:</strong><br>
-              <span id="metricMontoPromedio" class="text-primary">$0</span>
-            </small>
-          </div>
+            <button class="btn btn-danger" onclick="location.reload()">
+                <i class="bi bi-arrow-clockwise"></i> Reintentar
+            </button>
         </div>
-      </div>
     </div>
-
-    <!-- Tabla de Observaciones Recientes -->
-    <div class="row">
-      <div class="col-12">
-        <div class="card shadow-sm">
-          <div class="card-header bg-dark text-white">
-            <h6 class="mb-0"><i class="bi bi-clock-history"></i> Observaciones Recientes (Últimas 10)</h6>
-          </div>
-          <div class="card-body">
-            <div class="table-responsive">
-              <table class="table table-sm table-striped">
-                <thead>
-                  <tr>
-                    <th>#</th>
-                    <th>Proyecto</th>
-                    <th>Estado</th>
-                    <th>Fecha Creación</th>
-                    <th>Días Restantes</th>
-                  </tr>
-                </thead>
-                <tbody id="tableObservacionesRecientes">
-                  <tr><td colspan="5" class="text-center text-muted">Cargando...</td></tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-  </div>
-
-  <!-- Mensaje de Error -->
-  <div id="errorContainer" style="display: none;">
-    <div class="alert alert-danger" role="alert">
-      <h4 class="alert-heading"><i class="bi bi-exclamation-triangle"></i> Error al cargar el tablero</h4>
-      <p id="errorMessage"></p>
-      <hr>
-      <button class="btn btn-danger" onclick="location.reload()">
-        <i class="bi bi-arrow-clockwise"></i> Reintentar
-      </button>
-    </div>
-  </div>
 
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script>
-  let chartProyectos = null;
-  let chartObservaciones = null;
+    let chartProyectos = null;
+    let chartObservaciones = null;
 
-  // Utilidades
-  function formatearFecha(fecha) {
-    if (!fecha) return '-';
-    try {
-      return new Date(fecha).toLocaleDateString('es-AR', {
-        day: '2-digit',
-        month: '2-digit',
-        year: 'numeric'
-      });
-    } catch (e) {
-      return '-';
-    }
-  }
-
-  function formatearMoneda(monto) {
-    if (!monto && monto !== 0) return '$0';
-    return new Intl.NumberFormat('es-AR', {
-      style: 'currency',
-      currency: 'ARS',
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0
-    }).format(monto);
-  }
-
-  function escapeHtml(text) {
-    const map = {
-      '&': '&amp;',
-      '<': '&lt;',
-      '>': '&gt;',
-      '"': '&quot;',
-      "'": '&#039;'
-    };
-    return String(text || '').replace(/[&<>"']/g, m => map[m]);
-  }
-
-  function getBadgeClass(estado) {
-    const badges = {
-      'planificacion': 'bg-secondary',
-      'ejecucion': 'bg-warning text-dark',
-      'finalizado': 'bg-success',
-      'pendiente': 'bg-warning text-dark',
-      'respondida': 'bg-info',
-      'rechazada': 'bg-danger',
-      'aprobada': 'bg-success',
-      'vencida': 'bg-danger'
-    };
-    return badges[estado] || 'bg-secondary';
-  }
-
-  // Cargar datos del dashboard
-  async function cargarDashboard() {
-    document.getElementById('loadingSpinner').style.display = 'block';
-    document.getElementById('dashboardContent').style.display = 'none';
-    document.getElementById('errorContainer').style.display = 'none';
-
-    try {
-      const res = await fetch('/api/bonita/dashboard/datos/');
-      
-      if (!res.ok) {
-        throw new Error(`Error ${res.status}: ${res.statusText}`);
-      }
-
-      const data = await res.json();
-
-      if (!data.ok) {
-        throw new Error(data.error || 'Error desconocido al cargar datos');
-      }
-
-      renderizarDashboard(data.data);
-      
-      document.getElementById('lastUpdate').textContent = new Date().toLocaleString('es-AR');
-      document.getElementById('loadingSpinner').style.display = 'none';
-      document.getElementById('dashboardContent').style.display = 'block';
-
-    } catch (error) {
-      console.error('Error cargando dashboard:', error);
-      document.getElementById('loadingSpinner').style.display = 'none';
-      document.getElementById('errorContainer').style.display = 'block';
-      document.getElementById('errorMessage').textContent = error.message;
-    }
-  }
-
-  function renderizarDashboard(data) {
-    // Métricas principales
-    document.getElementById('metricTotalProyectos').textContent = data.metricas.total_proyectos || 0;
-    document.getElementById('metricProyectosFinalizados').textContent = data.metricas.proyectos_finalizados || 0;
-    document.getElementById('metricProyectosEjecucion').textContent = data.metricas.proyectos_ejecucion || 0;
-    document.getElementById('metricTotalObservaciones').textContent = data.metricas.total_observaciones || 0;
-
-    // Métricas de pedidos y compromisos
-    document.getElementById('metricTotalPedidos').textContent = data.metricas.total_pedidos || 0;
-    document.getElementById('metricPedidosAbiertos').textContent = data.metricas.pedidos_abiertos || 0;
-    document.getElementById('metricTotalCompromisos').textContent = data.metricas.total_compromisos || 0;
-    document.getElementById('metricCompromisosCumplidos').textContent = data.metricas.compromisos_cumplidos || 0;
-    document.getElementById('metricMontoTotal').textContent = formatearMoneda(data.metricas.monto_total_compromisos || 0);
-    document.getElementById('metricMontoPromedio').textContent = formatearMoneda(data.metricas.monto_promedio_compromiso || 0);
-
-    // Progress bars
-    const pctPedidosAbiertos = data.metricas.total_pedidos > 0 
-      ? Math.round((data.metricas.pedidos_abiertos / data.metricas.total_pedidos) * 100) 
-      : 0;
-    document.getElementById('progressPedidosAbiertos').style.width = pctPedidosAbiertos + '%';
-    document.getElementById('progressPedidosAbiertos').textContent = pctPedidosAbiertos + '%';
-
-    const pctCompromisosCumplidos = data.metricas.total_compromisos > 0 
-      ? Math.round((data.metricas.compromisos_cumplidos / data.metricas.total_compromisos) * 100) 
-      : 0;
-    document.getElementById('progressCompromisosCumplidos').style.width = pctCompromisosCumplidos + '%';
-    document.getElementById('progressCompromisosCumplidos').textContent = pctCompromisosCumplidos + '%';
-
-    // Gráficos
-    renderizarGraficos(data);
-
-    // Tablas
-    renderizarTablaTopObservaciones(data.top_proyectos_observaciones || []);
-    renderizarTablaTopCompromisos(data.top_proyectos_compromisos || []);
-    renderizarTablaObservacionesRecientes(data.observaciones_recientes || []);
-  }
-
-  function renderizarGraficos(data) {
-    // Gráfico de proyectos por estado
-    const ctxProyectos = document.getElementById('chartProyectosEstado').getContext('2d');
-    if (chartProyectos) chartProyectos.destroy();
-    
-    chartProyectos = new Chart(ctxProyectos, {
-      type: 'pie',
-      data: {
-        labels: ['Planificación', 'Ejecución', 'Finalizado'],
-        datasets: [{
-          data: [
-            data.metricas.proyectos_planificacion || 0,
-            data.metricas.proyectos_ejecucion || 0,
-            data.metricas.proyectos_finalizados || 0
-          ],
-          backgroundColor: ['#6c757d', '#ffc107', '#198754']
-        }]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-          legend: {
-            position: 'bottom'
-          }
+    // Utilidades
+    function formatearFecha(fecha) {
+        if (!fecha) return '-';
+        try {
+            return new Date(fecha).toLocaleDateString('es-AR', {
+                day: '2-digit',
+                month: '2-digit',
+                year: 'numeric'
+            });
+        } catch (e) {
+            return '-';
         }
-      }
-    });
+    }
 
-    // Gráfico de observaciones por estado
-    const ctxObservaciones = document.getElementById('chartObservacionesEstado').getContext('2d');
-    if (chartObservaciones) chartObservaciones.destroy();
-    
-    chartObservaciones = new Chart(ctxObservaciones, {
-      type: 'bar',
-      data: {
-        labels: ['Pendientes', 'Respondidas', 'Aprobadas', 'Rechazadas', 'Vencidas'],
-        datasets: [{
-          label: 'Cantidad',
-          data: [
-            data.metricas.observaciones_pendientes || 0,
-            data.metricas.observaciones_respondidas || 0,
-            data.metricas.observaciones_aprobadas || 0,
-            data.metricas.observaciones_rechazadas || 0,
-            data.metricas.observaciones_vencidas || 0
-          ],
-          backgroundColor: ['#ffc107', '#0dcaf0', '#198754', '#dc3545', '#dc3545']
-        }]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-          legend: {
-            display: false
-          }
-        },
-        scales: {
-          y: {
-            beginAtZero: true,
-            ticks: {
-              stepSize: 1
+    function formatearMoneda(monto) {
+        if (!monto && monto !== 0) return '$0';
+        return new Intl.NumberFormat('es-AR', {
+            style: 'currency',
+            currency: 'ARS',
+            minimumFractionDigits: 0,
+            maximumFractionDigits: 0
+        }).format(monto);
+    }
+
+    function escapeHtml(text) {
+        const map = {
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            '"': '&quot;',
+            "'": '&#039;'
+        };
+        return String(text || '').replace(/[&<>"']/g, m => map[m]);
+    }
+
+    function getBadgeClass(estado) {
+        const badges = {
+            'planificacion': 'bg-secondary',
+            'ejecucion': 'bg-warning text-dark',
+            'finalizado': 'bg-success',
+            'pendiente': 'bg-warning text-dark',
+            'respondida': 'bg-info',
+            'rechazada': 'bg-danger',
+            'aprobada': 'bg-success',
+            'vencida': 'bg-danger'
+        };
+        return badges[estado] || 'bg-secondary';
+    }
+
+    // Cargar datos del dashboard
+    async function cargarDashboard() {
+        document.getElementById('loadingSpinner').style.display = 'block';
+        document.getElementById('dashboardContent').style.display = 'none';
+        document.getElementById('errorContainer').style.display = 'none';
+
+        try {
+            const res = await fetch('/api/bonita/dashboard/datos/');
+
+            if (!res.ok) {
+                throw new Error(`Error ${res.status}: ${res.statusText}`);
             }
-          }
-        }
-      }
-    });
-  }
 
-  function renderizarTablaTopObservaciones(proyectos) {
-    const tbody = document.getElementById('tableTopObservaciones');
-    if (proyectos.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="3" class="text-center text-muted">No hay datos</td></tr>';
-      return;
+            const data = await res.json();
+
+            if (!data.ok) {
+                throw new Error(data.error || 'Error desconocido al cargar datos');
+            }
+
+            renderizarDashboard(data.data);
+
+            document.getElementById('lastUpdate').textContent = new Date().toLocaleString('es-AR');
+            document.getElementById('loadingSpinner').style.display = 'none';
+            document.getElementById('dashboardContent').style.display = 'block';
+
+        } catch (error) {
+            console.error('Error cargando dashboard:', error);
+            document.getElementById('loadingSpinner').style.display = 'none';
+            document.getElementById('errorContainer').style.display = 'block';
+            document.getElementById('errorMessage').textContent = error.message;
+        }
     }
 
-    tbody.innerHTML = proyectos.map(p => `
+    function renderizarDashboard(data) {
+        // Métricas principales
+        document.getElementById('metricTotalProyectos').textContent = data.metricas.total_proyectos || 0;
+        document.getElementById('metricProyectosFinalizados').textContent = data.metricas.proyectos_finalizados || 0;
+        document.getElementById('metricProyectosEjecucion').textContent = data.metricas.proyectos_ejecucion || 0;
+        document.getElementById('metricTotalObservaciones').textContent = data.metricas.total_observaciones || 0;
+
+        // Métricas de pedidos y compromisos
+        document.getElementById('metricTotalPedidos').textContent = data.metricas.total_pedidos || 0;
+        document.getElementById('metricPedidosAbiertos').textContent = data.metricas.pedidos_abiertos || 0;
+        document.getElementById('metricTotalCompromisos').textContent = data.metricas.total_compromisos || 0;
+        document.getElementById('metricCompromisosCumplidos').textContent = data.metricas.compromisos_cumplidos || 0;
+        document.getElementById('metricMontoTotal').textContent = formatearMoneda(data.metricas.monto_total_compromisos || 0);
+        document.getElementById('metricMontoPromedio').textContent = formatearMoneda(data.metricas.monto_promedio_compromiso || 0);
+
+        // Progress bars
+        const pctPedidosAbiertos = data.metricas.total_pedidos > 0
+                ? Math.round((data.metricas.pedidos_abiertos / data.metricas.total_pedidos) * 100)
+                : 0;
+        document.getElementById('progressPedidosAbiertos').style.width = pctPedidosAbiertos + '%';
+        document.getElementById('progressPedidosAbiertos').textContent = pctPedidosAbiertos + '%';
+
+        const pctCompromisosCumplidos = data.metricas.total_compromisos > 0
+                ? Math.round((data.metricas.compromisos_cumplidos / data.metricas.total_compromisos) * 100)
+                : 0;
+        document.getElementById('progressCompromisosCumplidos').style.width = pctCompromisosCumplidos + '%';
+        document.getElementById('progressCompromisosCumplidos').textContent = pctCompromisosCumplidos + '%';
+
+        // Gráficos
+        renderizarGraficos(data);
+
+        // Tablas
+        renderizarTablaTopObservaciones(data.top_proyectos_observaciones || []);
+        renderizarTablaTopCompromisos(data.top_proyectos_compromisos || []);
+        renderizarTablaObservacionesRecientes(data.observaciones_recientes || []);
+        renderizarTopTiposPedidos(data.top_tipos_pedidos || []);
+    }
+
+    function renderizarGraficos(data) {
+        // Gráfico de proyectos por estado
+        const ctxProyectos = document.getElementById('chartProyectosEstado').getContext('2d');
+        if (chartProyectos) chartProyectos.destroy();
+
+        chartProyectos = new Chart(ctxProyectos, {
+            type: 'pie',
+            data: {
+                labels: ['Planificación', 'Ejecución', 'Finalizado'],
+                datasets: [{
+                    data: [
+                        data.metricas.proyectos_planificacion || 0,
+                        data.metricas.proyectos_ejecucion || 0,
+                        data.metricas.proyectos_finalizados || 0
+                    ],
+                    backgroundColor: ['#6c757d', '#ffc107', '#198754']
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'bottom'
+                    }
+                }
+            }
+        });
+
+        // Gráfico de observaciones por estado
+        const ctxObservaciones = document.getElementById('chartObservacionesEstado').getContext('2d');
+        if (chartObservaciones) chartObservaciones.destroy();
+
+        chartObservaciones = new Chart(ctxObservaciones, {
+            type: 'bar',
+            data: {
+                labels: ['Pendientes', 'Respondidas', 'Aprobadas', 'Rechazadas', 'Vencidas'],
+                datasets: [{
+                    label: 'Cantidad',
+                    data: [
+                        data.metricas.observaciones_pendientes || 0,
+                        data.metricas.observaciones_respondidas || 0,
+                        data.metricas.observaciones_aprobadas || 0,
+                        data.metricas.observaciones_rechazadas || 0,
+                        data.metricas.observaciones_vencidas || 0
+                    ],
+                    backgroundColor: ['#ffc107', '#0dcaf0', '#198754', '#dc3545', '#dc3545']
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        display: false
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            stepSize: 1
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    function renderizarTablaTopObservaciones(proyectos) {
+        const tbody = document.getElementById('tableTopObservaciones');
+        if (proyectos.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="3" class="text-center text-muted">No hay datos</td></tr>';
+            return;
+        }
+
+        tbody.innerHTML = proyectos.map(p => `
       <tr>
         <td>${escapeHtml(p.nombre)}</td>
         <td><span class="badge ${getBadgeClass(p.estado)}">${p.estado}</span></td>
         <td class="text-end"><strong>${p.total_observaciones}</strong></td>
       </tr>
     `).join('');
-  }
-
-  function renderizarTablaTopCompromisos(proyectos) {
-    const tbody = document.getElementById('tableTopCompromisos');
-    if (proyectos.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="3" class="text-center text-muted">No hay datos</td></tr>';
-      return;
     }
 
-    tbody.innerHTML = proyectos.map(p => `
+    function renderizarTablaTopCompromisos(proyectos) {
+        const tbody = document.getElementById('tableTopCompromisos');
+        if (proyectos.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="3" class="text-center text-muted">No hay datos</td></tr>';
+            return;
+        }
+
+        tbody.innerHTML = proyectos.map(p => `
       <tr>
         <td>${escapeHtml(p.nombre)}</td>
         <td class="text-end">${p.total_pedidos}</td>
         <td class="text-end"><strong>${p.total_compromisos}</strong></td>
       </tr>
     `).join('');
-  }
-
-  function renderizarTablaObservacionesRecientes(observaciones) {
-    const tbody = document.getElementById('tableObservacionesRecientes');
-    if (observaciones.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted">No hay observaciones</td></tr>';
-      return;
     }
 
-    tbody.innerHTML = observaciones.map(obs => {
-      let diasRestantes = '-';
-      if (obs.dias_restantes !== null && obs.dias_restantes !== undefined) {
-        diasRestantes = obs.dias_restantes >= 0 ? `${obs.dias_restantes} días` : 'Vencida';
-      }
+    function renderizarTablaObservacionesRecientes(observaciones) {
+        const tbody = document.getElementById('tableObservacionesRecientes');
+        if (observaciones.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted">No hay observaciones</td></tr>';
+            return;
+        }
 
-      return `
+        tbody.innerHTML = observaciones.map(obs => {
+            let diasRestantes = '-';
+            if (obs.dias_restantes !== null && obs.dias_restantes !== undefined) {
+                diasRestantes = obs.dias_restantes >= 0 ? `${obs.dias_restantes} días` : 'Vencida';
+            }
+
+            return `
         <tr>
           <td>#${obs.id}</td>
           <td>${escapeHtml(obs.proyecto_nombre)}</td>
@@ -571,13 +609,56 @@
           <td>${diasRestantes}</td>
         </tr>
       `;
-    }).join('');
-  }
+        }).join('');
+    }
 
-  // Cargar dashboard al iniciar
-  document.addEventListener('DOMContentLoaded', () => {
-    cargarDashboard();
-  });
+    function renderizarTopTiposPedidos(topTipos) {
+        const container = document.getElementById('topTiposPedidos');
+
+        if (!topTipos || topTipos.length === 0) {
+            container.innerHTML = '<p class="text-center text-muted">No hay datos de tipos de pedidos</p>';
+            return;
+        }
+
+        let html = '<div class="row">';
+
+        topTipos.forEach((tipo, index) => {
+            const posicion = index + 1;
+            const medalla = ['🥇', '🥈', '🥉'][index] || '🏅';
+
+            html += `
+                <div class="col-md-4 mb-3">
+                    <div class="card h-100 shadow-sm">
+                        <div class="card-header bg-light">
+                            <h6 class="mb-0">${medalla} ${posicion}. ${escapeHtml(tipo.tipo)}</h6>
+                            <small class="text-muted">${tipo.cantidad_pedidos} pedido(s) solicitado(s)</small>
+                        </div>
+                        <div class="card-body">
+                            <h6 class="text-muted mb-3" style="font-size: 0.85rem;">Top 3 Usuarios con más Compromisos:</h6>
+                            ${(tipo.top_usuarios && (tipo.top_usuarios.length > 0)) ? `
+                                <ol class="list-group list-group-numbered list-group-flush">
+                                    ${tipo.top_usuarios.map(usuario => `
+                                        <li class="list-group-item d-flex justify-content-between align-items-center px-0">
+                                            <span class="text-truncate">${escapeHtml(usuario.usuario || 'Desconocido')}</span>
+                                            <span class="badge bg-primary rounded-pill">${usuario.cantidad_compromisos}</span>
+                                        </li>
+                                    `).join('')}
+                                </ol>
+                            ` : '<p class="text-muted small mb-0">Sin compromisos registrados</p>'}
+                        </div>
+                    </div>
+                </div>
+            `;
+        });
+
+        html += '</div>';
+        container.innerHTML = html;
+    }
+
+    // Cargar dashboard al iniciar
+    document.addEventListener('DOMContentLoaded', () => {
+        cargarDashboard();
+    });
 </script>
 
 </body>
