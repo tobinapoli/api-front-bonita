@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Revisar proyectos</title>
+  <title>Revisar proyectos | ProjectPlanning</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
 </head>
 <body class="bg-light">
@@ -22,22 +22,30 @@
 <div class="container py-4" style="max-width:900px">
   <div class="card shadow-sm">
     <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
-      <h4 class="mb-0">Revisar proyectos</h4>
-      <button id="btnCargar" class="btn btn-light btn-sm">Cargar desde Bonita</button>
+      <div>
+        <h4 class="mb-0">Revisá los proyectos publicados</h4>
+      </div>
+      <button id="btnCargar" class="btn btn-light btn-sm">
+        Cargar desde Bonita
+      </button>
     </div>
     <div class="card-body">
-      <div class="alert alert-info mb-3">
-        Caso: <code id="caseOut">{{ request.GET.case }}</code>
-        <div class="small mt-2">
-          Esta vista muestra proyectos en <strong>planificación</strong>, <strong>ejecución</strong> y
-          <strong>finalizados</strong>. En los proyectos finalizados solo podés ver el detalle.
-        </div>
-      </div>
+      <p class="text-muted small mb-3">
+        En esta vista podés revisar proyectos en <strong>planificación</strong>, <strong>ejecución</strong> y
+        <strong>finalizados</strong>
+      </p>
+
       <div id="panel"></div>
       <div id="msg" class="mt-3"></div>
     </div>
   </div>
 </div>
+
+<footer class="mt-4 bg-light border-top py-3">
+  <div class="container text-center text-muted small">
+    © 2025 ProjectPlanning · Organizaciones sociales en red
+  </div>
+</footer>
 
 <script>
   function qp(n){ return new URLSearchParams(location.search).get(n); }
@@ -103,73 +111,88 @@
       return;
     }
 
-    const res = await fetch(`/api/bonita/revisar/?case=${encodeURIComponent(caseId)}`);
-    const j = await res.json();
+    const btnCargar = document.getElementById("btnCargar");
+    const originalBtnHtml = btnCargar.innerHTML;
+    btnCargar.disabled = true;
+    btnCargar.innerHTML = `
+      <span class="spinner-border spinner-border-sm me-2"></span>
+      Cargando...
+    `;
 
-    if (!res.ok || !j.ok) {
-      panel.innerHTML =
-        `<div class="alert alert-danger">Error: ${j.error || res.status}</div>`;
-      return;
-    }
+    try {
+      const res = await fetch(`/api/bonita/revisar/?case=${encodeURIComponent(caseId)}`);
+      const j = await res.json();
 
-    const lista = j.proyectos || [];
-
-    if (lista.length === 0) {
-      panel.innerHTML =
-        `<div class="alert alert-secondary">No hay proyectos para este caso.</div>`;
-      return;
-    }
-
-    const html = lista.map(p => {
-      const estado = normalizarEstado(p.estado);
-      const nombre = p.nombre || "Proyecto sin nombre";
-      const desc   = p.descripcion || "";
-      const idp    = p.id;
-
-      let botonHTML = "";
-
-      if (estado === "planificacion") {
-        botonHTML = `
-          <button class="btn btn-sm btn-outline-primary"
-                  onclick="verPedidos(${idp})">
-            Ver pedidos
-          </button>`;
-      } else if (estado === "ejecucion") {
-        botonHTML = `
-          <button class="btn btn-sm btn-outline-success"
-                  onclick="verMonitoreo(${idp})">
-            Monitorear
-          </button>`;
-      } else if (estado === "finalizado") {
-        botonHTML = `
-          <button class="btn btn-sm btn-outline-dark"
-                  onclick="verMonitoreo(${idp})">
-            Ver detalle
-          </button>`;
+      if (!res.ok || !j.ok) {
+        panel.innerHTML =
+          `<div class="alert alert-danger">Error: ${j.error || res.status}</div>`;
+        return;
       }
 
-      return `
-        <div class="border rounded p-3 mb-2">
-          <div class="d-flex justify-content-between align-items-start">
-            <div>
-              <h5 class="mb-1">${nombre}</h5>
-              <div class="text-muted small">ID: <strong>${idp}</strong></div>
-              <span class="badge ${claseBadgeEstado(p)}">${etiquetaEstado(p)}</span>
+      const lista = j.proyectos || [];
+
+      if (lista.length === 0) {
+        panel.innerHTML =
+          `<div class="alert alert-secondary">No hay proyectos para este caso.</div>`;
+        return;
+      }
+
+      const html = lista.map(p => {
+        const estado = normalizarEstado(p.estado);
+        const nombre = p.nombre || "Proyecto sin nombre";
+        const desc   = p.descripcion || "";
+        const idp    = p.id;
+
+        let botonHTML = "";
+
+        if (estado === "planificacion") {
+          botonHTML = `
+            <button class="btn btn-sm btn-outline-primary"
+                    onclick="verPedidos(${idp}, this)">
+              Ver pedidos
+            </button>`;
+        } else if (estado === "ejecucion") {
+          botonHTML = `
+            <button class="btn btn-sm btn-outline-success"
+                    onclick="verMonitoreo(${idp})">
+              Monitorear
+            </button>`;
+        } else if (estado === "finalizado") {
+          botonHTML = `
+            <button class="btn btn-sm btn-outline-dark"
+                    onclick="verMonitoreo(${idp})">
+              Ver detalle
+            </button>`;
+        }
+
+        return `
+          <div class="border rounded p-3 mb-2 bg-white">
+            <div class="d-flex justify-content-between align-items-start">
+              <div>
+                <h5 class="mb-1">${nombre}</h5>
+                <span class="badge ${claseBadgeEstado(p)}">${etiquetaEstado(p)}</span>
+              </div>
+              ${botonHTML}
             </div>
-            ${botonHTML}
+
+            ${desc ? `<p class="mt-2 mb-1">${desc}</p>` : ""}
+            <div class="small text-muted">${textoAccion(p)}</div>
           </div>
+        `;
+      }).join("");
 
-          ${desc ? `<p class="mt-2 mb-1">${desc}</p>` : ""}
-          <div class="small text-muted">${textoAccion(p)}</div>
-        </div>
-      `;
-    }).join("");
-
-    panel.innerHTML = html;
+      panel.innerHTML = html;
+    } catch (err) {
+      panel.innerHTML =
+        `<div class="alert alert-danger">Error al cargar proyectos.</div>`;
+    } finally {
+      btnCargar.disabled = false;
+      btnCargar.innerHTML = originalBtnHtml;
+    }
   }
 
-  // Igual que antes: elige proyecto y dispara la tarea 'Revisar proyectos'
-  async function verPedidos(proyectoId) {
+  // Seleccionar proyecto y avanzar a "Ver pedidos"
+  async function verPedidos(proyectoId, btnEl) {
     const caseId = qp("case");
     const rol    = qp("rol") || "red_ongs";
 
@@ -180,23 +203,54 @@
 
     setMsg("");
 
-    const res = await fetch("/api/bonita/elegir-proyecto/", {
-      method: "POST",
-      headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({ caseId, proyectoId })
-    });
-
-    const j = await res.json();
-    if (!res.ok || !j.ok) {
-      setMsg(
-        `<div class="alert alert-danger">Error al seleccionar proyecto: ${j.error || res.status}</div>`
-      );
-      return;
+    let originalHtml = "";
+    if (btnEl) {
+      originalHtml = btnEl.innerHTML;
+      btnEl.disabled = true;
+      btnEl.innerHTML = `
+        <span class="spinner-border spinner-border-sm me-2"></span>
+        Abriendo...
+      `;
+      // marcamos el botón como "en carga" para poder restaurarlo si se vuelve con el back
+      btnEl.dataset.loading = "1";
+      btnEl.dataset.originalHtml = originalHtml;
     }
 
-    const url =
-      `/bonita/ver-pedidos/?case=${encodeURIComponent(caseId)}&proyecto=${encodeURIComponent(proyectoId)}&rol=${encodeURIComponent(rol)}`;
-    location.href = url;
+    try {
+      const res = await fetch("/api/bonita/elegir-proyecto/", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({ caseId, proyectoId })
+      });
+
+      const j = await res.json();
+      if (!res.ok || !j.ok) {
+        setMsg(
+          `<div class="alert alert-danger">Error al seleccionar proyecto: ${j.error || res.status}</div>`
+        );
+        if (btnEl) {
+          btnEl.disabled = false;
+          btnEl.innerHTML = originalHtml;
+          delete btnEl.dataset.loading;
+          delete btnEl.dataset.originalHtml;
+        }
+        return;
+      }
+
+      const url =
+        `/bonita/ver-pedidos/?case=${encodeURIComponent(caseId)}&proyecto=${encodeURIComponent(proyectoId)}&rol=${encodeURIComponent(rol)}`;
+      location.href = url;
+    } catch (err) {
+      setMsg(
+        `<div class="alert alert-danger">No se pudo contactar con el servidor.</div>`
+      );
+      if (btnEl) {
+        btnEl.disabled = false;
+        btnEl.innerHTML = originalHtml;
+        delete btnEl.dataset.loading;
+        delete btnEl.dataset.originalHtml;
+      }
+    }
   }
 
   function verMonitoreo(proyectoId) {
@@ -209,7 +263,7 @@
       `/bonita/monitoreo/?case=${encodeURIComponent(caseId)}&proyecto=${encodeURIComponent(proyectoId)}&rol=red_ongs`;
   }
 
-  // Terminar colaboración de la Red de ONGs (seguirColaborando = false)
+  // Terminar colaboración de la Red de ONGs
   async function salirRed() {
     const caseId = qp("case");
     if (!caseId) {
@@ -221,39 +275,70 @@
       return;
     }
 
+    const btn = document.getElementById("btnSalirRed");
+    const original = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = `
+      <span class="spinner-border spinner-border-sm me-2"></span>
+      Cerrando...
+    `;
+
     setMsg("");
 
-    const res = await fetch("/api/bonita/red-ongs/salir/", {
-      method: "POST",
-      headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({ caseId })
-    });
-
-    let j;
     try {
-      j = await res.json();
-    } catch {
-      j = { ok: false, error: "Respuesta inválida del servidor" };
-    }
+      const res = await fetch("/api/bonita/red-ongs/salir/", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({ caseId })
+      });
 
-    if (!res.ok || j.ok === false) {
+      let j;
+      try {
+        j = await res.json();
+      } catch {
+        j = { ok: false, error: "Respuesta inválida del servidor" };
+      }
+
+      if (!res.ok || j.ok === false) {
+        setMsg(
+          `<div class="alert alert-danger">Error al finalizar colaboración: ${j.error || res.status}</div>`
+        );
+        btn.disabled = false;
+        btn.innerHTML = original;
+        return;
+      }
+
       setMsg(
-        `<div class="alert alert-danger">Error al finalizar colaboración: ${j.error || res.status}</div>`
+        `<div class="alert alert-success">La Red de ONGs finalizó su colaboración en este caso.</div>`
       );
-      return;
+      setTimeout(() => {
+        window.location.href = "/bonita/login/";
+      }, 1500);
+    } catch (err) {
+      setMsg(
+        `<div class="alert alert-danger">No se pudo contactar con el servidor.</div>`
+      );
+      btn.disabled = false;
+      btn.innerHTML = original;
     }
-
-    setMsg(
-      `<div class="alert alert-success">La Red de ONGs finalizó su colaboración en este caso.</div>`
-    );
-    setTimeout(() => {
-      window.location.href = "/bonita/login/";
-    }, 1500);
   }
 
   document.getElementById("btnCargar").addEventListener("click", cargar);
   cargar();
 
+  // Cuando volvés con el botón "Atrás", restaurar botones que hayan quedado en modo carga
+  window.addEventListener("pageshow", function () {
+    const loadingButtons = document.querySelectorAll("button[data-loading='1']");
+    loadingButtons.forEach(btn => {
+      const original = btn.dataset.originalHtml || "Ver pedidos";
+      btn.disabled = false;
+      btn.innerHTML = original;
+      delete btn.dataset.loading;
+      delete btn.dataset.originalHtml;
+    });
+  });
+
+  // Exponer funciones para onclick en HTML
   window.verPedidos   = verPedidos;
   window.verMonitoreo = verMonitoreo;
   window.salirRed     = salirRed;

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Registrar pedido</title>
+  <title>Registrar pedido | ProjectPlanning</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
 </head>
 
@@ -17,14 +17,14 @@
 
 <div class="container py-4" style="max-width:720px">
   <div class="card shadow-sm">
-    <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
-      <h4 class="mb-0">Registrar nuevo pedido</h4>
-      <span class="badge bg-light text-primary small">
-        Proyecto #{{ request.GET.proyecto }}
-      </span>
+    <div class="card-header bg-primary text-white">
+      <h3 class="mb-0">Registrá un nuevo pedido</h3>
     </div>
 
     <div class="card-body">
+      <p class="text-muted mb-3">
+        Ingresá los datos necesarios para registrar un pedido asociado al proyecto.
+      </p>
 
       <form id="pedidoForm">
         <input type="hidden" name="case" value="{{ request.GET.case }}">
@@ -64,7 +64,6 @@
       </form>
 
       <div id="resultado" class="mt-4"></div>
-
     </div>
   </div>
 </div>
@@ -72,7 +71,7 @@
 <script>
   function qp(name){ return new URLSearchParams(location.search).get(name); }
 
-  // 🔐 Solo ONG originante puede registrar pedidos
+  // 🔐 Permisos
   (function () {
     const rol = qp("rol");
     if (rol && rol !== "ong_originante") {
@@ -82,20 +81,27 @@
     }
   })();
 
-  const form      = document.getElementById("pedidoForm");
-  const resultado = document.getElementById("resultado");
+  const form       = document.getElementById("pedidoForm");
+  const resultado  = document.getElementById("resultado");
   const btnGuardar = document.getElementById("btnGuardar");
 
   async function enviarPedido() {
     resultado.innerHTML = "";
+
+    // botón cargando
+    const originalBtnHtml = btnGuardar.innerHTML;
     btnGuardar.disabled = true;
+    btnGuardar.innerHTML = `
+      <span class="spinner-border spinner-border-sm me-2"></span>
+      Guardando...
+    `;
 
     const f = form;
 
     const payload = {
-      caseId:        qp("case"),
-      proyectoId:    qp("proyecto"),
-      pedidoTipo:    f.pedidoTipo.value,
+      caseId: qp("case"),
+      proyectoId: qp("proyecto"),
+      pedidoTipo: f.pedidoTipo.value,
       pedidoDetalle: f.pedidoDetalle.value
     };
 
@@ -118,9 +124,10 @@
       } else {
         resultado.innerHTML = `
           <div class="alert alert-success">
-            Pedido registrado. Avanzando a la siguiente etapa...
+            Pedido registrado correctamente...
           </div>
         `;
+
         setTimeout(() => {
           const caseId     = qp("case");
           const proyectoId = qp("proyecto");
@@ -130,14 +137,15 @@
             `/bonita/evaluar/?case=${encodeURIComponent(caseId)}&proyecto=${encodeURIComponent(proyectoId)}&rol=${encodeURIComponent(rol)}`;
         }, 1200);
       }
-    } catch (err) {
+    } catch {
       resultado.innerHTML = `
         <div class="alert alert-danger">
-          No se pudo contactar con la API de pedidos.
+          No se pudo contactar con la API.
         </div>
       `;
     } finally {
       btnGuardar.disabled = false;
+      btnGuardar.innerHTML = originalBtnHtml;
     }
   }
 
