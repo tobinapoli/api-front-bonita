@@ -94,6 +94,13 @@ def compromiso_page(req: HttpRequest):
     }
     return render(req, "bonita/compromiso.html", ctx)
 
+def dashboard_page(req: HttpRequest):
+    """
+    Página del tablero gerencial para el Consejo Directivo.
+    Muestra métricas consolidadas del sistema.
+    """
+    return render(req, "bonita/dashboard.html")
+
 def consejo_page(req: HttpRequest):
     api_base = getattr(settings, "API_BASE_URL", "http://127.0.0.1:8000")
     ctx = {
@@ -1642,6 +1649,294 @@ def cerrar_sesion_consejo_api(req: HttpRequest):
     except Exception as e:
         return JsonResponse(
             {"ok": False, "error": "Error cerrando sesión", "detail": str(e)},
+            status=500,
+        )
+
+
+@csrf_exempt
+def dashboard_datos_api(req: HttpRequest):
+    """
+    Endpoint para obtener métricas del dashboard gerencial.
+
+    Consulta:
+    1. API Django (/api/dashboard/metricas/) para todos los datos consolidados
+    2. API REST de Bonita para casos activos
+    3. Base de datos local para sesiones
+    """
+    if req.method != "GET":
+        return JsonResponse({"error": "GET only"}, status=405)
+
+    try:
+        from bonita.models import SesionBonita
+        from decimal import Decimal
+        from datetime import datetime
+
+        api_base = getattr(settings, "API_BASE_URL", "http://127.0.0.1:8000")
+
+        # ========================================
+        # 1. CONSULTAR API DJANGO (ENDPOINT CONSOLIDADO)
+        # ========================================
+
+        proyectos = []
+        pedidos = []
+        compromisos = []
+        observaciones = []
+
+        try:
+            res_metricas = requests.get(f"{api_base}/api/dashboard/metricas/", timeout=10)
+            if res_metricas.ok:
+                data = res_metricas.json()
+                proyectos = data.get('proyectos', [])
+                pedidos = data.get('pedidos', [])
+                compromisos = data.get('compromisos', [])
+                observaciones = data.get('observaciones', [])
+            else:
+                print(f"Error consultando API Django: {res_metricas.status_code} - {res_metricas.text}")
+        except Exception as e:
+            print(f"Error consultando API Django: {e}")
+
+        # ========================================
+        # 2. CALCULAR MÉTRICAS DE PROYECTOS
+        # ========================================
+
+        total_proyectos = len(proyectos)
+        proyectos_planificacion = sum(1 for p in proyectos if p.get('estado') == 'planificacion')
+        proyectos_ejecucion = sum(1 for p in proyectos if p.get('estado') == 'ejecucion')
+        proyectos_finalizados = sum(1 for p in proyectos if p.get('estado') == 'finalizado')
+
+        # ========================================
+        # 3. CALCULAR MÉTRICAS DE PEDIDOS
+        # ========================================
+
+        total_pedidos = len(pedidos)
+        pedidos_abiertos = sum(1 for p in pedidos if p.get('estado') == 'abierto')
+
+        # ========================================
+        # 4. CALCULAR MÉTRICAS DE COMPROMISOS
+        # ========================================
+
+        total_compromisos = len(compromisos)
+        compromisos_cumplidos = sum(1 for c in compromisos if c.get('estado') == 'cumplido')
+
+        # Calcular montos
+        monto_total = Decimal('0')
+        for c in compromisos:
+            monto = c.get('monto')
+            if monto:
+                try:
+                    monto_total += Decimal(str(monto))
+                except:
+                    pass
+
+        monto_promedio = monto_total / total_compromisos if total_compromisos > 0 else Decimal('0')
+
+        # ========================================
+        # 5. CALCULAR MÉTRICAS DE OBSERVACIONES
+        # ========================================
+
+        total_observaciones = len(observaciones)
+        observaciones_pendientes = sum(1 for o in observaciones if o.get('estado') == 'pendiente')
+        observaciones_respondidas = sum(1 for o in observaciones if o.get('estado') == 'respondida')
+        observaciones_aprobadas = sum(1 for o in observaciones if o.get('estado') == 'aprobada')
+        observaciones_rechazadas = sum(1 for o in observaciones if o.get('estado') == 'rechazada')
+        observaciones_vencidas = sum(1 for o in observaciones if o.get('estado') == 'vencida')
+
+        # ========================================
+        # 6. CONSULTAR API REST DE BONITA
+        # ========================================
+
+        casos_activos = 0
+        casos_ong = 0
+        casos_consejo = 0
+
+        try:
+            # Autenticar en Bonita
+            bonita_base = settings.BONITA_BASE_URL
+            login_url = f"{bonita_base}/loginservice"
+
+            bonita_session = requests.Session()
+            login_data = {
+                "username": settings.BONITA_USER,
+                "password": settings.BONITA_PASSWORD,
+                "redirect": "false"
+            }
+
+            login_resp = bonita_session.post(login_url, data=login_data, timeout=5)
+
+            if login_resp.ok:
+                # Consultar casos activos
+                cases_url = f"{bonita_base}/API/bpm/case"
+                params = {"f": "state=started", "p": 0, "c": 100}
+                cases_resp = bonita_session.get(cases_url, params=params, timeout=5)
+
+                if cases_resp.ok:
+                    cases = cases_resp.json()
+                    casos_activos = len(cases)
+
+                    # Contar casos por proceso
+                    for case in cases:
+                        process_name = case.get('processDefinitionId', {}).get('name', '')
+                        if 'ProjectPlanning' in process_name:
+                            casos_ong += 1
+                        elif 'Consejo' in process_name:
+                            casos_consejo += 1
+
+        except Exception as e:
+            print(f"Error consultando Bonita: {e}")
+
+        # Sesiones locales
+        sesiones_activas = SesionBonita.objects.count()
+        sesiones_consejo_local = SesionBonita.objects.filter(proceso="Consejo Directivo").count()
+        sesiones_ongs_local = SesionBonita.objects.filter(proceso="ProjectPlanning").count()
+
+        # ========================================
+        # 7. TOP PROYECTOS CON MÁS OBSERVACIONES
+        # ========================================
+
+        proyectos_obs_count = {}
+        for obs in observaciones:
+            proyecto_id = obs.get('proyecto')
+            if proyecto_id:
+                proyectos_obs_count[proyecto_id] = proyectos_obs_count.get(proyecto_id, 0) + 1
+
+        # Crear diccionario de proyectos para búsqueda rápida
+        proyectos_dict = {p['id']: p for p in proyectos}
+
+        top_proyectos_obs = []
+        for proyecto_id, count in sorted(proyectos_obs_count.items(), key=lambda x: x[1], reverse=True)[:5]:
+            proyecto = proyectos_dict.get(proyecto_id)
+            if proyecto:
+                top_proyectos_obs.append({
+                    "id": proyecto_id,
+                    "nombre": proyecto.get('nombre', 'Sin nombre'),
+                    "estado": proyecto.get('estado', 'desconocido'),
+                    "total_observaciones": count
+                })
+
+        # ========================================
+        # 8. TOP PROYECTOS CON MÁS COMPROMISOS
+        # ========================================
+
+        proyectos_comp_count = {}
+        proyectos_pedidos_count = {}
+
+        # Contar pedidos por proyecto
+        for pedido in pedidos:
+            proyecto_id = pedido.get('proyecto')
+            if proyecto_id:
+                proyectos_pedidos_count[proyecto_id] = proyectos_pedidos_count.get(proyecto_id, 0) + 1
+
+        # Contar compromisos por proyecto (a través de pedidos)
+        for compromiso in compromisos:
+            pedido_id = compromiso.get('pedido')
+            # Encontrar el proyecto del pedido
+            for pedido in pedidos:
+                if pedido.get('id') == pedido_id:
+                    proyecto_id = pedido.get('proyecto')
+                    if proyecto_id:
+                        proyectos_comp_count[proyecto_id] = proyectos_comp_count.get(proyecto_id, 0) + 1
+                    break
+
+        top_proyectos_comp = []
+        for proyecto_id, count in sorted(proyectos_comp_count.items(), key=lambda x: x[1], reverse=True)[:5]:
+            proyecto = proyectos_dict.get(proyecto_id)
+            if proyecto:
+                top_proyectos_comp.append({
+                    "id": proyecto_id,
+                    "nombre": proyecto.get('nombre', 'Sin nombre'),
+                    "total_pedidos": proyectos_pedidos_count.get(proyecto_id, 0),
+                    "total_compromisos": count
+                })
+
+        # ========================================
+        # 9. OBSERVACIONES RECIENTES (últimas 10)
+        # ========================================
+
+        observaciones_recientes = []
+        # Ordenar por fecha de creación (más recientes primero)
+        observaciones_ordenadas = sorted(
+            observaciones,
+            key=lambda x: x.get('fecha_creacion', ''),
+            reverse=True
+        )[:10]
+
+        for obs in observaciones_ordenadas:
+            proyecto_id = obs.get('proyecto_id')
+            proyecto = proyectos_dict.get(proyecto_id)
+
+            # Calcular días restantes
+            dias_restantes = None
+            fecha_vencimiento = obs.get('fecha_vencimiento')
+            if fecha_vencimiento:
+                try:
+                    fecha_venc = datetime.fromisoformat(fecha_vencimiento.replace('Z', '+00:00'))
+                    dias_restantes = (fecha_venc - datetime.now(fecha_venc.tzinfo)).days
+                except:
+                    pass
+
+            observaciones_recientes.append({
+                "id": obs.get('id'),
+                "proyecto_nombre": proyecto.get('nombre', 'Desconocido') if proyecto else 'Desconocido',
+                "estado": obs.get('estado', 'desconocido'),
+                "fecha_creacion": obs.get('fecha_creacion'),
+                "dias_restantes": dias_restantes
+            })
+
+        # ========================================
+        # 10. CONSTRUIR RESPUESTA
+        # ========================================
+
+        metricas = {
+            # Proyectos
+            "total_proyectos": total_proyectos,
+            "proyectos_planificacion": proyectos_planificacion,
+            "proyectos_ejecucion": proyectos_ejecucion,
+            "proyectos_finalizados": proyectos_finalizados,
+
+            # Pedidos
+            "total_pedidos": total_pedidos,
+            "pedidos_abiertos": pedidos_abiertos,
+
+            # Compromisos
+            "total_compromisos": total_compromisos,
+            "compromisos_cumplidos": compromisos_cumplidos,
+            "monto_total_compromisos": float(monto_total),
+            "monto_promedio_compromiso": float(monto_promedio),
+
+            # Observaciones
+            "total_observaciones": total_observaciones,
+            "observaciones_pendientes": observaciones_pendientes,
+            "observaciones_respondidas": observaciones_respondidas,
+            "observaciones_aprobadas": observaciones_aprobadas,
+            "observaciones_rechazadas": observaciones_rechazadas,
+            "observaciones_vencidas": observaciones_vencidas,
+
+            # Bonita
+            "casos_activos_bonita": casos_activos,
+            "casos_ong_bonita": casos_ong,
+            "casos_consejo_bonita": casos_consejo,
+
+            # Sesiones locales
+            "sesiones_activas": sesiones_activas,
+            "sesiones_consejo": sesiones_consejo_local,
+            "sesiones_ongs": sesiones_ongs_local,
+        }
+
+        return JsonResponse({
+            "ok": True,
+            "data": {
+                "metricas": metricas,
+                "top_proyectos_observaciones": top_proyectos_obs,
+                "top_proyectos_compromisos": top_proyectos_comp,
+                "observaciones_recientes": observaciones_recientes
+            }
+        }, status=200)
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return JsonResponse(
+            {"ok": False, "error": "Error obteniendo datos del dashboard", "detail": str(e)},
             status=500,
         )
 

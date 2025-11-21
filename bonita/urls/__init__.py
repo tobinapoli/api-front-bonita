@@ -16,4 +16,5 @@ urlpatterns = [
     path("evaluar/", views.evaluar_propuestas_page, name="bonita_evaluar_propuestas_page"),
     path("monitoreo/", views.monitoreo_proyecto_page, name="bonita_monitoreo_proyecto_page"),
     path("consejo/evaluar/", views.consejo_evaluar_page, name="bonita_consejo_evaluar_page"),
+    path("dashboard/", views.dashboard_page, name="bonita_dashboard_page"),
 ]

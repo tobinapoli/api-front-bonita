@@ -85,3 +85,9 @@ BONITA_PROCESS_VERSION = os.getenv("BONITA_PROCESS_VERSION", "1.0")
 # Proceso Consejo Directivo
 BONITA_PROCESS_NAME_CONSEJO = os.getenv("BONITA_PROCESS_NAME_CONSEJO", "Consejo Directivo")
 BONITA_PROCESS_VERSION_CONSEJO = os.getenv("BONITA_PROCESS_VERSION_CONSEJO", "1.0")
+
+# ============================
+# API DJANGO CONFIG
+# ============================
+
+API_BASE_URL = os.getenv("API_BASE_URL", "http://127.0.0.1:8000")

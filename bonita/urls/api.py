@@ -25,6 +25,7 @@ from bonita.views import (
     resumen_proyecto_api,
     red_ongs_salir_api,          
     debug_case_variables_api,
+    dashboard_datos_api,
 )
 
 urlpatterns = [
@@ -58,6 +59,9 @@ urlpatterns = [
     ),
     path("consejo/observaciones/", enviar_observaciones_consejo_api, name="bonita_consejo_observaciones"),
     path("consejo/cerrar-sesion/", cerrar_sesion_consejo_api, name="bonita_cerrar_sesion_consejo"),
+
+    # Dashboard gerencial
+    path("dashboard/datos/", dashboard_datos_api, name="bonita_dashboard_datos"),
 
     # Evaluar propuestas / monitoreo
     path("revisar-compromisos/", revisar_compromisos_api,  name="bonita_revisar_compromisos"),
