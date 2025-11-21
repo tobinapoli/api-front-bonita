@@ -1773,9 +1773,29 @@ def dashboard_datos_api(req: HttpRequest):
                     cases = cases_resp.json()
                     casos_activos = len(cases)
 
+                    # Crear cache de nombres de procesos
+                    process_names_cache = {}
+
                     # Contar casos por proceso
                     for case in cases:
-                        process_name = case.get('processDefinitionId', {}).get('name', '')
+                        process_def_id = case.get('processDefinitionId', '')
+                        if not process_def_id:
+                            continue
+
+                        # Obtener nombre del proceso desde cache o consultarlo
+                        if process_def_id not in process_names_cache:
+                            try:
+                                process_url = f"{bonita_base}/API/bpm/process/{process_def_id}"
+                                process_resp = bonita_session.get(process_url, timeout=3)
+                                if process_resp.ok:
+                                    process_data = process_resp.json()
+                                    process_names_cache[process_def_id] = process_data.get('name', '')
+                                else:
+                                    process_names_cache[process_def_id] = ''
+                            except Exception:
+                                process_names_cache[process_def_id] = ''
+
+                        process_name = process_names_cache[process_def_id]
                         if 'ProjectPlanning' in process_name:
                             casos_ong += 1
                         elif 'Consejo' in process_name:
@@ -1795,7 +1815,7 @@ def dashboard_datos_api(req: HttpRequest):
 
         proyectos_obs_count = {}
         for obs in observaciones:
-            proyecto_id = obs.get('proyecto')
+            proyecto_id = obs.get('proyecto_id')
             if proyecto_id:
                 proyectos_obs_count[proyecto_id] = proyectos_obs_count.get(proyecto_id, 0) + 1
 
@@ -1820,6 +1840,9 @@ def dashboard_datos_api(req: HttpRequest):
         proyectos_comp_count = {}
         proyectos_pedidos_count = {}
 
+        # Crear diccionario de pedidos para búsqueda rápida
+        pedidos_dict = {p['id']: p for p in pedidos}
+
         # Contar pedidos por proyecto
         for pedido in pedidos:
             proyecto_id = pedido.get('proyecto')
@@ -1828,14 +1851,13 @@ def dashboard_datos_api(req: HttpRequest):
 
         # Contar compromisos por proyecto (a través de pedidos)
         for compromiso in compromisos:
-            pedido_id = compromiso.get('pedido')
-            # Encontrar el proyecto del pedido
-            for pedido in pedidos:
-                if pedido.get('id') == pedido_id:
+            pedido_id = compromiso.get('pedidoId')
+            if pedido_id:
+                pedido = pedidos_dict.get(pedido_id)
+                if pedido:
                     proyecto_id = pedido.get('proyecto')
                     if proyecto_id:
                         proyectos_comp_count[proyecto_id] = proyectos_comp_count.get(proyecto_id, 0) + 1
-                    break
 
         top_proyectos_comp = []
         for proyecto_id, count in sorted(proyectos_comp_count.items(), key=lambda x: x[1], reverse=True)[:5]:
