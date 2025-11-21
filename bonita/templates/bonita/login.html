@@ -18,7 +18,7 @@
       <input name="pass" type="password" class="form-control" required>
     </div>
 
-    <!-- NUEVO: checkbox Consejo Directivo -->
+    <!-- Checkbox Consejo Directivo -->
     <div class="mb-3 form-check">
       <input class="form-check-input" type="checkbox" id="consejo" name="consejo">
       <label class="form-check-label" for="consejo">
@@ -85,8 +85,9 @@ document.getElementById("loginForm").addEventListener("submit", async (e) => {
       u.searchParams.set("case", caseId);
       location.href = u.toString();
     } else if (res2.status === 409) {
+      const errorMsg = j2.error || "No hay ninguna tarea pendiente en Bonita para este caso.";
       out.innerHTML =
-        `<div class="alert alert-danger"><strong>Error:</strong> Credenciales incorrectas.</div>`;
+        `<div class="alert alert-danger"><strong>Error:</strong> ${errorMsg}</div>`;
     } else {
       const errorMsg = j2.error || "Error al determinar el siguiente paso.";
       out.innerHTML =

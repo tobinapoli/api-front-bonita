@@ -232,6 +232,9 @@ def next_step_api(req: HttpRequest):
     
     Si no hay tarea ready, intenta determinar el estado del caso
     a partir de las variables para redirigir correctamente.
+
+    Si no se puede determinar un rol válido (rol = 'desconocido'),
+    devuelve 403 y NO redirige a ninguna página.
     """
     if req.method != "POST":
         return JsonResponse({"error": "POST only"}, status=405)
@@ -245,7 +248,6 @@ def next_step_api(req: HttpRequest):
         cli = BonitaClient()
         cli.login()
 
-        # Obtener variables del caso para construir URLs con parámetros
         proyecto_id = None
         pedido_id = None
         rol_usuario = None
@@ -280,23 +282,20 @@ def next_step_api(req: HttpRequest):
         except Exception:
             pass
 
-        # Intentar buscar tarea ready (timeout corto)
+        # Aca probamos un poco más de tiempo para que aparezca la primera tarea
         task = cli.wait_ready_task_in_case(
             case_id,
             task_name=None,
-            timeout_sec=3,  # Timeout más corto para retomar flujo
+            timeout_sec=8,  # antes 3
         )
         
-        # Variables por defecto
         name = ""
         rol = "desconocido"
         url = f"/bonita/home/?case={case_id}"
 
         if task:
-            # Hay tarea ready, mapearla
             name = (task.get("name") or task.get("displayName") or "").strip()
             
-            # Mapeo de tareas
             if name == "Definir plan de trabajo y economico":
                 rol = "ong_originante"
                 url = f"/bonita/nuevo/?case={case_id}"
@@ -357,34 +356,90 @@ def next_step_api(req: HttpRequest):
                 else:
                     url = f"/bonita/monitoreo/?case={case_id}"
         else:
-            # No hay tarea ready, determinar estado del caso por variables
             name = "Sin tarea ready - inferido por variables"
             
-            # Si tiene proyectoId, probablemente está en alguna etapa del flujo
             if proyecto_id:
-                # Determinar rol por la variable "rol" de Bonita
+                # Si ya hay proyecto, misma lógica que tenías
                 if rol_usuario:
                     rol_lower = rol_usuario.lower()
                     if "originante" in rol_lower:
-                        # ONG originante - llevar a monitoreo
                         rol = "ong_originante"
                         url = f"/bonita/monitoreo/?case={case_id}&proyecto={proyecto_id}"
                         name = "Monitoreo (inferido - ONG Originante)"
                     elif "red" in rol_lower or "ongs" in rol_lower:
-                        # Red de ONGs - llevar a revisar
                         rol = "red_ongs"
                         url = f"/bonita/revisar/?case={case_id}"
                         name = "Revisar proyectos (inferido - Red ONGs)"
                     elif "consejo" in rol_lower:
-                        # Consejo Directivo
                         rol = "consejo_directivo"
                         url = f"/bonita/consejo/?case={case_id}"
                         name = "Consejo (inferido - Consejo Directivo)"
                 else:
-                    # Sin rol, pero tiene proyecto - asumir ONG originante y llevar a monitoreo
                     rol = "ong_originante"
                     url = f"/bonita/monitoreo/?case={case_id}&proyecto={proyecto_id}"
                     name = "Monitoreo (inferido por proyecto)"
+            else:
+                # Caso conflictivo: proceso recién creado, sin proyectoId
+                # Solo lo mandamos a algo concreto si Bonita YA marcó un rol claro
+                if rol_usuario:
+                    rol_lower = rol_usuario.lower()
+                    if "originante" in rol_lower:
+                        rol = "ong_originante"
+                        url = f"/bonita/nuevo/?case={case_id}&rol=ong_originante"
+                        name = "Definir plan de trabajo y económico (inferido)"
+                    elif "red" in rol_lower or "ongs" in rol_lower:
+                        rol = "red_ongs"
+                        url = f"/bonita/revisar/?case={case_id}&rol=red_ongs"
+                        name = "Revisar proyectos (inferido - Red ONGs)"
+                    elif "consejo" in rol_lower:
+                        rol = "consejo_directivo"
+                        url = f"/bonita/consejo/?case={case_id}"
+                        name = "Consejo (inferido - Consejo Directivo)"
+                    else:
+                        # Rol raro → devolvemos 403, no mandamos al home
+                        return JsonResponse(
+                            {
+                                "ok": False,
+                                "caseId": case_id,
+                                "tarea": name,
+                                "rol": "desconocido",
+                                "proyectoId": proyecto_id,
+                                "pedidoId": pedido_id,
+                                "error": "Rol no determinado. Volvé a intentar el login.",
+                            },
+                            status=403,
+                        )
+                else:
+                    # Sin rol y sin proyecto: caso recién creado, no se sabe nada todavía
+                    # Devolvemos 403 para que el frontend NO redirija a ningún lado.
+                    return JsonResponse(
+                        {
+                            "ok": False,
+                            "caseId": case_id,
+                            "tarea": name,
+                            "rol": "desconocido",
+                            "proyectoId": proyecto_id,
+                            "pedidoId": pedido_id,
+                            "error": "No se pudo determinar tu rol todavía. Volvé a intentar el login.",
+                        },
+                        status=403,
+                    )
+
+        # Guardrail final: si por cualquier razón seguimos con rol desconocido,
+        # NO devolvemos URL, devolvemos 403.
+        if rol == "desconocido":
+            return JsonResponse(
+                {
+                    "ok": False,
+                    "caseId": case_id,
+                    "tarea": name,
+                    "rol": rol,
+                    "proyectoId": proyecto_id,
+                    "pedidoId": pedido_id,
+                    "error": "No se pudo determinar tu rol. Reintentá el login.",
+                },
+                status=403,
+            )
 
         return JsonResponse(
             {
@@ -404,6 +459,7 @@ def next_step_api(req: HttpRequest):
             {"ok": False, "error": "Fallo al decidir siguiente paso", "detail": str(e)},
             status=500,
         )
+
 def consejo_evaluar_page(req: HttpRequest):
     ctx = {
         "case": req.GET.get("case", "")
