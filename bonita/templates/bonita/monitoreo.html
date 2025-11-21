@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Monitoreo del proyecto</title>
+  <title>Monitoreo del proyecto | ProjectPlanning</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
 </head>
 <body class="bg-light">
@@ -18,14 +18,6 @@
   <div class="card shadow-sm">
     <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
       <h4 class="mb-0">Monitoreo del proyecto</h4>
-      <div class="text-end small">
-        {% if case %}
-          <div>Caso: <code>{{ case }}</code></div>
-        {% endif %}
-        {% if proyecto %}
-          <div>Proyecto: <code>{{ proyecto }}</code></div>
-        {% endif %}
-      </div>
     </div>
 
     <div class="card-body">
@@ -79,21 +71,28 @@
         <a href="/bonita/login/" class="btn btn-outline-secondary btn-sm">
           Volver al inicio
         </a>
-        
+
         <a id="btnVolverProyecto" href="#" class="btn btn-outline-primary btn-sm">
           Volver a Evaluar / Agregar Compromisos
         </a>
       </div>
-      
+
       <div class="mt-3 text-end" id="divFinalizar">
-          <button class="btn btn-success" id="btnFinalizarProyecto" onclick="finalizarProyecto()">
-            Finalizar Proyecto
-          </button>
+        <button class="btn btn-success" id="btnFinalizarProyecto" onclick="finalizarProyecto()">
+          Finalizar Proyecto
+        </button>
       </div>
     </div>
   </div>
 </div>
 
+<footer class="mt-4 bg-light border-top py-3">
+  <div class="container text-center text-muted small">
+    © 2025 ProjectPlanning · Organizaciones sociales en red
+  </div>
+</footer>
+
+<!-- Modal para responder observaciones -->
 <div class="modal fade" id="modalResponder" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-lg">
     <div class="modal-content">
@@ -103,22 +102,22 @@
       </div>
       <div class="modal-body">
         <div class="alert alert-warning">
-            <strong>Observación recibida:</strong>
-            <p class="mb-0 mt-2" id="textoObservacionModal" style="font-style: italic;">...</p>
+          <strong>Observación recibida:</strong>
+          <p class="mb-0 mt-2" id="textoObservacionModal" style="font-style: italic;">...</p>
         </div>
-        
+
         <form id="formResponder">
-            <input type="hidden" id="idObservacionResponder">
-            <div class="mb-3">
-                <label for="textoRespuesta" class="form-label fw-bold">Tu Respuesta / Plan de acción:</label>
-                <textarea id="textoRespuesta" class="form-control" rows="5" required placeholder="Describe cómo vas a solucionar lo señalado por el Consejo..."></textarea>
-            </div>
+          <input type="hidden" id="idObservacionResponder">
+          <div class="mb-3">
+            <label for="textoRespuesta" class="form-label fw-bold">Tu Respuesta / Plan de acción:</label>
+            <textarea id="textoRespuesta" class="form-control" rows="5" required placeholder="Describe cómo vas a solucionar lo señalado por el Consejo..."></textarea>
+          </div>
         </form>
       </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
         <button type="button" class="btn btn-danger" onclick="enviarRespuesta()">
-            <i class="bi bi-send"></i> Enviar Respuesta
+          Enviar Respuesta
         </button>
       </div>
     </div>
@@ -131,6 +130,17 @@
     return new URLSearchParams(location.search).get(n);
   }
 
+  function formatearFecha(fechaIso) {
+    if (!fechaIso) return "";
+    const d = new Date(fechaIso);
+    if (isNaN(d.getTime())) return fechaIso;
+    const mesesCortos = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
+    const dia = d.getDate();
+    const mes = mesesCortos[d.getMonth()];
+    const anio = d.getFullYear();
+    return `${dia} de ${mes}, ${anio}`;
+  }
+
   const msg               = document.getElementById("msg");
   const pNombre           = document.getElementById("pNombre");
   const pDescripcion      = document.getElementById("pDescripcion");
@@ -140,7 +150,7 @@
   const btnVolverProyecto = document.getElementById("btnVolverProyecto");
   const btnFinalizarProyecto = document.getElementById("btnFinalizarProyecto");
   const divFinalizar      = document.getElementById("divFinalizar");
-  
+
   let modalResponder = null;
 
   document.addEventListener('DOMContentLoaded', function() {
@@ -188,7 +198,7 @@
         return;
       }
 
-      // 1. Renderizar datos básicos
+      // 1. Datos básicos
       pNombre.textContent      = j.nombreProyecto || "-";
       pDescripcion.textContent = j.descripcion || "-";
 
@@ -197,13 +207,17 @@
         tablaEtapas.innerHTML =
           '<tr><td colspan="3" class="text-muted">Sin etapas registradas.</td></tr>';
       } else {
-        tablaEtapas.innerHTML = etapas.map(e => `
-          <tr>
-            <td>${e.nombre || "-"}</td>
-            <td>${e.fechaInicioPrevista || "-"}</td>
-            <td>${e.fechaFinPrevista || "-"}</td>
-          </tr>
-        `).join("");
+        tablaEtapas.innerHTML = etapas.map(e => {
+          const ini = e.fechaInicioPrevista ? formatearFecha(e.fechaInicioPrevista) : "-";
+          const fin = e.fechaFinPrevista ? formatearFecha(e.fechaFinPrevista) : "-";
+          return `
+            <tr>
+              <td>${e.nombre || "-"}</td>
+              <td>${ini}</td>
+              <td>${fin}</td>
+            </tr>
+          `;
+        }).join("");
       }
 
       const compromisos = j.compromisosAceptados || [];
@@ -213,24 +227,27 @@
             Todavía no hay compromisos aceptados registrados en este proyecto.
           </div>`;
       } else {
-        const html = compromisos.map(c => `
-          <div class="border rounded p-3 mb-2">
-            <div class="d-flex justify-content-between align-items-center">
-              <div>
-                <strong>Compromiso #${c.id}</strong>
-                <div class="small text-muted mt-1">
-                  ${c.detalle ? `${c.detalle}<br>` : ""}
-                  ${c.fecha ? `Fecha: <strong>${c.fecha}</strong><br>` : ""}
-                  Estado: <strong>${c.estado || "-"}</strong>
+        const html = compromisos.map(c => {
+          const fecha = c.fecha ? `Fecha: <strong>${formatearFecha(c.fecha)}</strong><br>` : "";
+          return `
+            <div class="border rounded p-3 mb-2">
+              <div class="d-flex justify-content-between align-items-center">
+                <div>
+                  <strong>Descripción del compromiso:</strong>
+                  <div class="small text-muted mt-1">
+                    ${c.detalle ? `${c.detalle}<br>` : ""}
+                    ${fecha}
+                    Estado: <strong>${c.estado || "-"}</strong>
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
-        `).join("");
+          `;
+        }).join("");
         listaCompromisos.innerHTML = html;
       }
 
-      // 2. Renderizar historial de observaciones (visible para ambos roles)
+      // 2. Historial de observaciones
       const observaciones = j.historialObservaciones || [];
       if (!observaciones.length) {
         historialObservaciones.innerHTML = `
@@ -239,27 +256,27 @@
           </div>`;
       } else {
         const htmlObs = observaciones.map(obs => {
-          const estadoBadge = getEstadoBadge(obs.estado);
-          const fechaCreacion = obs.fecha_creacion ? new Date(obs.fecha_creacion).toLocaleDateString('es-AR') : '-';
-          const fechaRespuesta = obs.fecha_respuesta ? new Date(obs.fecha_respuesta).toLocaleDateString('es-AR') : '-';
-          
+          const estadoBadge   = getEstadoBadge(obs.estado);
+          const fechaCreacion = obs.fecha_creacion ? formatearFecha(obs.fecha_creacion) : '-';
+          const fechaRespuesta = obs.fecha_respuesta ? formatearFecha(obs.fecha_respuesta) : '-';
+
           return `
             <div class="card mb-3 shadow-sm">
               <div class="card-header d-flex justify-content-between align-items-center">
-                <span><strong>Observación #${obs.id}</strong></span>
+                <span><strong>Observación del Consejo</strong></span>
                 ${estadoBadge}
               </div>
               <div class="card-body">
-                <p class="mb-2"><strong>📋 Observación del Consejo:</strong></p>
+                <p class="mb-2"><strong>📋 Descripción de la observación</strong></p>
                 <p class="text-muted mb-3" style="white-space: pre-line;">${escapeHtml(obs.texto)}</p>
-                
+
                 ${obs.respuesta ? `
                   <hr>
                   <p class="mb-2"><strong>💬 Respuesta de la ONG:</strong></p>
                   <p class="text-muted mb-2" style="white-space: pre-line;">${escapeHtml(obs.respuesta)}</p>
                   <small class="text-muted">Respondida el: ${fechaRespuesta}</small>
-                ` : ''}
-                
+                ` : ""}
+
                 <div class="mt-2 text-end small text-muted">
                   Creada el: ${fechaCreacion}
                 </div>
@@ -270,54 +287,54 @@
         historialObservaciones.innerHTML = htmlObs;
       }
 
-      // 3. Lógica de OBSERVACIONES PENDIENTES y control de finalización
+      // 3. Lógica de observaciones pendientes / bloqueo
       const tieneObservacionesProblematicas = j.historialObservaciones && j.historialObservaciones.some(
         obs => obs.estado === 'pendiente' || obs.estado === 'rechazada' || obs.estado === 'respondida'
       );
-      
+
       if (j.observacionPendiente && rol !== "red_ongs") {
-          const obs = j.observacionPendiente;
-          let tituloAlert = "⚠️ Tienes una observación pendiente del Consejo";
-          let claseAlert = "alert-danger";
-          
-          if (obs.estado === 'rechazada') {
-              tituloAlert = "❌ Tu respuesta anterior fue RECHAZADA";
-          }
+        const obs = j.observacionPendiente;
+        let tituloAlert = "⚠️ Tenés una observación pendiente del Consejo";
+        let claseAlert = "alert-danger";
 
-          // Solo la ONG originante puede responder y queda bloqueada para finalizar
-          let bloqueBoton = `
-            <div class="text-end">
-                <button class="btn btn-danger fw-bold" onclick="abrirModalResponder(${obs.id}, '${escapeHtml(obs.texto)}')">
-                    Responder Observación
-                </button>
-            </div>`;
+        if (obs.estado === 'rechazada') {
+          tituloAlert = "❌ Tu respuesta anterior fue RECHAZADA";
+        }
 
-          if (btnFinalizarProyecto) btnFinalizarProyecto.disabled = true;
-          btnVolverProyecto.classList.add("disabled");
+        const fechaCreacion = obs.fecha_creacion ? formatearFecha(obs.fecha_creacion) : "";
 
-          setMsg(`
-            <div class="alert ${claseAlert} border border-danger shadow-sm">
-                <h4>${tituloAlert}</h4>
-                <p>El Consejo Directivo ha realizado observaciones sobre la ejecución del proyecto. Debes responder para poder continuar.</p>
-                <hr>
-                <p><strong>Detalle:</strong> "${obs.texto}"</p>
-                ${bloqueBoton}
-            </div>
-          `);
+        let bloqueBoton = `
+          <div class="text-end">
+            <button class="btn btn-danger fw-bold" onclick="abrirModalResponder(${obs.id}, '${escapeHtml(obs.texto)}')">
+              Responder observación
+            </button>
+          </div>`;
+
+        if (btnFinalizarProyecto) btnFinalizarProyecto.disabled = true;
+        btnVolverProyecto.classList.add("disabled");
+
+        setMsg(`
+          <div class="alert ${claseAlert} border border-danger shadow-sm">
+            <h4>${tituloAlert}</h4>
+            <p>El Consejo Directivo realizó observaciones sobre la ejecución del proyecto. Tenés que responder para poder continuar.</p>
+            ${fechaCreacion ? `<p class="mb-1"><small class="text-muted">Creada el ${fechaCreacion}</small></p>` : ""}
+            <hr>
+            <p><strong>Detalle:</strong> "${escapeHtml(obs.texto)}"</p>
+            ${bloqueBoton}
+          </div>
+        `);
       } else if (tieneObservacionesProblematicas && rol !== "red_ongs") {
-          // Hay observaciones pendientes de evaluación, bloquear finalización (solo relevante para ONG originante)
-          setMsg(`
-            <div class="alert alert-warning border border-warning shadow-sm">
-                <h4>⏳ Observaciones en proceso</h4>
-                <p>Hay observaciones que están siendo evaluadas por el Consejo Directivo. No puedes finalizar el proyecto hasta que todas sean resueltas.</p>
-            </div>
-          `);
-          if (btnFinalizarProyecto) btnFinalizarProyecto.disabled = true;
+        setMsg(`
+          <div class="alert alert-warning border border-warning shadow-sm">
+            <h4>⏳ Observaciones en proceso</h4>
+            <p>Hay observaciones que están siendo evaluadas por el Consejo Directivo. No podés finalizar el proyecto hasta que todas estén resueltas.</p>
+          </div>
+        `);
+        if (btnFinalizarProyecto) btnFinalizarProyecto.disabled = true;
       } else {
-          // Todo limpio, puede finalizar (si no es Red de ONGs y el botón existe)
-          setMsg("");
-          if (btnFinalizarProyecto && rol !== "red_ongs") btnFinalizarProyecto.disabled = false;
-          btnVolverProyecto.classList.remove("disabled");
+        setMsg("");
+        if (btnFinalizarProyecto && rol !== "red_ongs") btnFinalizarProyecto.disabled = false;
+        btnVolverProyecto.classList.remove("disabled");
       }
 
     } catch (e) {
@@ -325,8 +342,6 @@
       setMsg('<div class="alert alert-danger">Error de red al cargar el resumen.</div>');
     }
   }
-
-  // --- Funciones auxiliares ---
 
   function getEstadoBadge(estado) {
     const badges = {
@@ -339,74 +354,69 @@
     return badges[estado] || `<span class="badge bg-secondary">${estado}</span>`;
   }
 
-  // --- Funciones para Responder ---
-
   function abrirModalResponder(id, texto) {
-      document.getElementById("idObservacionResponder").value = id;
-      document.getElementById("textoObservacionModal").innerText = texto;
-      document.getElementById("textoRespuesta").value = "";
-      modalResponder.show();
+    document.getElementById("idObservacionResponder").value = id;
+    document.getElementById("textoObservacionModal").innerText = texto;
+    document.getElementById("textoRespuesta").value = "";
+    modalResponder.show();
   }
 
   async function enviarRespuesta() {
-      const caseId = qp("case");
-      const obsId = document.getElementById("idObservacionResponder").value;
-      const resp = document.getElementById("textoRespuesta").value.trim();
-      
-      if(!resp) {
-          alert("Por favor, escribe una respuesta.");
-          return;
+    const caseId = qp("case");
+    const obsId  = document.getElementById("idObservacionResponder").value;
+    const resp   = document.getElementById("textoRespuesta").value.trim();
+
+    if (!resp) {
+      alert("Por favor, escribí una respuesta.");
+      return;
+    }
+
+    const btn = document.querySelector('#modalResponder .btn-danger');
+    const originalText = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = "Enviando...";
+
+    try {
+      const res = await fetch("/api/bonita/responder-observacion/", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({
+          caseId: caseId,
+          observacionId: parseInt(obsId),
+          respuesta: resp
+        })
+      });
+
+      const j = await res.json();
+
+      if (j.ok) {
+        alert("Respuesta enviada correctamente. El Consejo Directivo la evaluará.");
+        modalResponder.hide();
+        location.reload();
+      } else {
+        alert("Error al enviar respuesta: " + (j.error || "Desconocido"));
       }
-
-      const btn = document.querySelector('#modalResponder .btn-danger');
-      const originalText = btn.innerHTML;
-      btn.disabled = true;
-      btn.innerHTML = "Enviando...";
-
-      try {
-        // Llamada a la nueva API que empuja la tarea en Bonita
-        const res = await fetch("/api/bonita/responder-observacion/", {
-            method: "POST",
-            headers: {"Content-Type": "application/json"},
-            body: JSON.stringify({ 
-                caseId: caseId, 
-                observacionId: parseInt(obsId), 
-                respuesta: resp 
-            })
-        });
-        
-        const j = await res.json();
-
-        if(j.ok) {
-            alert("Respuesta enviada correctamente. El Consejo Directivo la evaluará.");
-            modalResponder.hide();
-            location.reload(); // Recargar para actualizar el estado
-        } else {
-            alert("Error al enviar respuesta: " + (j.error || "Desconocido"));
-        }
-
-      } catch (err) {
-          alert("Error de red al enviar la respuesta.");
-      } finally {
-          btn.disabled = false;
-          btn.innerHTML = originalText;
-      }
+    } catch (err) {
+      alert("Error de red al enviar la respuesta.");
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = originalText;
+    }
   }
 
   async function finalizarProyecto() {
-    const caseId = qp("case");
+    const caseId     = qp("case");
     const proyectoId = qp("proyecto");
-    
+
     if (!caseId || !proyectoId) {
       alert("Faltan parámetros necesarios para finalizar el proyecto.");
       return;
     }
 
     const confirmar = confirm(
-      "¿Estás seguro de que deseas finalizar este proyecto?\n\n" +
-      "Esta acción cambiará el estado del proyecto a 'Finalizado' y no podrás revertirlo."
+      "¿Estás seguro de que querés finalizar este proyecto?\n\n" +
+      "Esta acción cambia el estado del proyecto a 'Finalizado' y no se puede deshacer."
     );
-    
     if (!confirmar) return;
 
     const btn = document.getElementById("btnFinalizarProyecto");
@@ -430,10 +440,10 @@
         setMsg(`
           <div class="alert alert-success">
             <strong>✓ Proyecto finalizado correctamente</strong>
-            <p class="mb-0">El proyecto ha sido marcado como finalizado. Redirigiendo...</p>
+            <p class="mb-0">El proyecto fue marcado como finalizado. Redirigiendo...</p>
           </div>
         `);
-        
+
         setTimeout(() => {
           window.location.href = '/bonita/login/';
         }, 2000);
@@ -452,11 +462,11 @@
   function escapeHtml(text) {
     if (!text) return text;
     return text
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-        .replace(/"/g, "&quot;")
-        .replace(/'/g, "&#039;");
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;");
   }
 </script>
 
