@@ -95,8 +95,10 @@ def compromiso_page(req: HttpRequest):
     return render(req, "bonita/compromiso.html", ctx)
 
 def consejo_page(req: HttpRequest):
+    api_base = getattr(settings, "API_BASE_URL", "http://127.0.0.1:8000")
     ctx = {
-        "case": req.GET.get("case", "")
+        "case": req.GET.get("case", ""),
+        "API_BASE_URL": api_base
     }
     return render(req, "bonita/consejo.html", ctx)
 
@@ -1165,6 +1167,50 @@ def registrar_compromiso_api(req: HttpRequest):
 
 # --------------------------- API: Consejo Directivo ---------------------------
 
+# --------------------------- Helpers para observaciones ---------------------------
+
+def calcular_limite_manual(proyecto: dict) -> dict:
+    """
+    Calcula el límite de observaciones basándose en el total de observaciones del proyecto.
+    Esto es un fallback cuando no se puede consultar el endpoint de la API Django.
+    
+    IMPORTANTE: Este método cuenta TODAS las observaciones originales del proyecto,
+    sin importar su estado. Las observaciones rechazadas no se cuentan como adicionales
+    porque son la misma observación que vuelve a la ONG.
+    
+    El serializer ProyectoConObservacionesOut devuelve:
+    - observaciones_pendientes
+    - observaciones_rechazadas  
+    - observaciones_respondidas
+    - observaciones_vencidas
+    - total_observaciones
+    
+    NOTA: Las observaciones aprobadas ya están incluidas en alguno de los contadores o en total.
+    """
+    # El campo total_observaciones es el más confiable si existe
+    total_obs = proyecto.get("total_observaciones", 0)
+    
+    # Si no existe, sumar los contadores individuales
+    if total_obs == 0:
+        total_obs = (
+            (proyecto.get("observaciones_pendientes") or 0) +
+            (proyecto.get("observaciones_rechazadas") or 0) +
+            (proyecto.get("observaciones_respondidas") or 0) +
+            (proyecto.get("observaciones_vencidas") or 0)
+        )
+    
+    # Si tiene 2 o más observaciones, límite alcanzado
+    puede_observar = total_obs < 2
+    
+    return {
+        "puede_observar": puede_observar,
+        "observaciones_realizadas": total_obs,
+        "mensaje": f"Se han realizado {total_obs} de 2 observaciones permitidas este mes" if total_obs < 2 
+                   else f"Ya se realizaron {total_obs} de 2 observaciones permitidas este mes",
+        "fecha_reset": None  # No podemos calcular esto sin acceso a la BD
+    }
+
+
 @csrf_exempt
 def obtener_proyectos_en_ejecucion_api(req: HttpRequest):
     """
@@ -1213,6 +1259,46 @@ def obtener_proyectos_en_ejecucion_api(req: HttpRequest):
                 {"error": "Error parseando proyectos", "detail": str(e)},
                 status=500,
             )
+
+        # Enriquecer cada proyecto con información del límite mensual
+        # Obtener token JWT del caso para consultar límites
+        var_access = cli.get_case_variable(case_id, "access")
+        jwt_token = None
+        if var_access and "value" in var_access:
+            jwt_token = var_access["value"]
+        
+        if jwt_token and isinstance(proyectos, list):
+            api_base = getattr(settings, "API_BASE_URL", "http://127.0.0.1:8000")
+            for proyecto in proyectos:
+                try:
+                    proyecto_id = proyecto.get("id")
+                    if proyecto_id:
+                        res_limite = requests.get(
+                            f"{api_base}/api/proyectos/{proyecto_id}/observaciones/limite/",
+                            headers={
+                                "Authorization": f"Bearer {jwt_token}",
+                                "Content-Type": "application/json"
+                            },
+                            timeout=5
+                        )
+                        if res_limite.status_code == 200:
+                            limite_info = res_limite.json()
+                            proyecto["limite_observaciones"] = limite_info
+                        else:
+                            # Endpoint no implementado o error - usar cálculo manual (fallback)
+                            if res_limite.status_code == 404:
+                                print(f"Info: Endpoint de límite no implementado para proyecto {proyecto_id}, usando cálculo manual")
+                            else:
+                                print(f"Advertencia: Error obteniendo límite para proyecto {proyecto_id}: Status {res_limite.status_code}")
+                            proyecto["limite_observaciones"] = calcular_limite_manual(proyecto)
+                except Exception as e:
+                    print(f"Excepción obteniendo límite para proyecto {proyecto.get('id')}: {e}")
+                    # Si falla la consulta, calcular manualmente basado en el total de observaciones
+                    proyecto["limite_observaciones"] = calcular_limite_manual(proyecto)
+        elif isinstance(proyectos, list):
+            # Si no hay token, calcular manualmente para todos
+            for proyecto in proyectos:
+                proyecto["limite_observaciones"] = calcular_limite_manual(proyecto)
 
         return JsonResponse(
             {
@@ -1276,6 +1362,43 @@ def enviar_observaciones_consejo_api(req: HttpRequest):
     try:
         cli = BonitaClient()
         cli.login()
+
+        # Obtener el token JWT del caso para verificar el límite
+        var_access = cli.get_case_variable(case_id, "access")
+        jwt_token = None
+        if var_access and "value" in var_access:
+            jwt_token = var_access["value"]
+
+        # Verificar límite mensual antes de ejecutar la tarea
+        if jwt_token:
+            api_base = getattr(settings, "API_BASE_URL", "http://127.0.0.1:8000")
+            try:
+                res_limite = requests.get(
+                    f"{api_base}/api/proyectos/{proyecto_id}/observaciones/limite/",
+                    headers={
+                        "Authorization": f"Bearer {jwt_token}",
+                        "Content-Type": "application/json"
+                    },
+                    timeout=10
+                )
+                
+                if res_limite.status_code == 200:
+                    limite_info = res_limite.json()
+                    if not limite_info.get("puede_observar", True):
+                        # Límite alcanzado
+                        return JsonResponse(
+                            {
+                                "ok": False,
+                                "error": "Límite de observaciones mensuales alcanzado",
+                                "detail": limite_info.get("mensaje", "Ya se alcanzó el límite de 2 observaciones este mes"),
+                                "observaciones_realizadas": limite_info.get("observaciones_realizadas", 2),
+                                "fecha_reset": limite_info.get("fecha_reset")
+                            },
+                            status=429,
+                        )
+            except Exception as e:
+                # Si falla la verificación, continuamos (el conector hará la validación)
+                print(f"Advertencia: No se pudo verificar límite de observaciones: {e}")
 
         assignee_username = getattr(settings, "BONITA_ASSIGNEE", "walter.bates")
         user_id = cli.get_user_id_by_username(assignee_username)
@@ -1344,6 +1467,29 @@ def enviar_observaciones_consejo_api(req: HttpRequest):
                 body_observacion = json.loads(var_body["value"])
             except Exception:
                 body_observacion = var_body["value"]
+
+        # Verificar si el conector devolvió un error 429 (límite alcanzado)
+        if status_code == 429:
+            error_msg = "Límite de observaciones mensuales alcanzado"
+            error_detail = "Ya se alcanzó el límite de 2 observaciones este mes"
+            obs_realizadas = 2
+            fecha_reset = None
+            
+            if body_observacion and isinstance(body_observacion, dict):
+                error_detail = body_observacion.get("detail", error_detail)
+                obs_realizadas = body_observacion.get("observaciones_realizadas", 2)
+                fecha_reset = body_observacion.get("fecha_reset")
+            
+            return JsonResponse(
+                {
+                    "ok": False,
+                    "error": error_msg,
+                    "detail": error_detail,
+                    "observaciones_realizadas": obs_realizadas,
+                    "fecha_reset": fecha_reset
+                },
+                status=429,
+            )
 
         return JsonResponse(
             {

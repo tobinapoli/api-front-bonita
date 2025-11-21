@@ -240,10 +240,29 @@
                                  (p.observaciones_respondidas || 0) + 
                                  (p.observaciones_vencidas || 0);
       const tieneObservaciones = totalObservaciones > 0;
+      
       // Las observaciones pendientes Y rechazadas bloquean la creación de nuevas
       const tieneObservacionesPendientes = (p.observaciones_pendientes || 0) > 0;
       const tieneObservacionesRechazadas = (p.observaciones_rechazadas || 0) > 0;
-      const bloqueado = tieneObservacionesPendientes || tieneObservacionesRechazadas;
+      const bloqueadoPorRespuestas = tieneObservacionesPendientes || tieneObservacionesRechazadas;
+      
+      // Verificar límite mensual
+      const limiteInfo = p.limite_observaciones || { puede_observar: true, observaciones_realizadas: 0 };
+      const limiteAlcanzado = !limiteInfo.puede_observar;
+      
+      // El proyecto está bloqueado si tiene observaciones pendientes/rechazadas O si alcanzó el límite mensual
+      const bloqueado = bloqueadoPorRespuestas || limiteAlcanzado;
+      
+      // Formatear fecha de reseteo si existe
+      let fechaResetTexto = '';
+      if (limiteAlcanzado && limiteInfo.fecha_reset) {
+        try {
+          const fecha = new Date(limiteInfo.fecha_reset);
+          fechaResetTexto = fecha.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+        } catch (e) {
+          fechaResetTexto = 'próximo mes';
+        }
+      }
       
       return `
       <div class="card proyecto-card shadow-sm mb-3">
@@ -268,11 +287,26 @@
                   ${p.observaciones_vencidas > 0 ? `<span class="badge bg-danger me-1">⚠️ ${p.observaciones_vencidas} vencidas</span>` : ''}
                 </div>
               ` : ''}
-              ${bloqueado ? `
+              
+              ${bloqueadoPorRespuestas ? `
                 <div class="alert alert-warning mt-3 mb-0 py-2 small">
                   <i class="bi bi-exclamation-triangle"></i> <strong>Atención:</strong> Este proyecto tiene observaciones 
                   ${tieneObservacionesRechazadas ? 'rechazadas que deben ser corregidas' : 'pendientes de respuesta'}. 
                   No se pueden crear nuevas observaciones hasta que las actuales sean respondidas.
+                </div>
+              ` : ''}
+              
+              ${limiteAlcanzado ? `
+                <div class="alert alert-info mt-3 mb-0 py-2 small">
+                  <i class="bi bi-calendar-check"></i> <strong>Límite mensual alcanzado:</strong> 
+                  Ya se realizaron ${limiteInfo.observaciones_realizadas} de 2 observaciones permitidas este mes para este proyecto.
+                  ${fechaResetTexto ? `<br><small class="text-muted">El contador se reseteará el ${fechaResetTexto}</small>` : ''}
+                </div>
+              ` : limiteInfo.observaciones_realizadas > 0 ? `
+                <div class="alert alert-secondary mt-3 mb-0 py-2 small">
+                  <i class="bi bi-info-circle"></i> 
+                  Se ha${limiteInfo.observaciones_realizadas === 1 ? '' : 'n'} realizado ${limiteInfo.observaciones_realizadas} 
+                  de 2 observaciones permitidas este mes para este proyecto.
                 </div>
               ` : ''}
             </div>
@@ -287,6 +321,7 @@
                   <i class="bi bi-pencil-square"></i> ${tieneObservaciones ? 'Nueva Observación' : 'Crear Observación'}
                 </button>
               ` : ''}
+            </div>
             </div>
           </div>
         </div>
@@ -351,10 +386,26 @@
       const j = await res.json();
 
       if (!res.ok || !j.ok) {
-        document.getElementById("modalMensaje").innerHTML = 
-          `<div class="alert alert-danger">
-            <strong>Error:</strong> ${j.error || 'No se pudieron enviar las observaciones'}
-          </div>`;
+        // Verificar si es error de límite mensual (status 429)
+        if (res.status === 429 || (j.error && j.error.includes('Límite de observaciones'))) {
+          const fechaReset = j.fecha_reset ? new Date(j.fecha_reset).toLocaleDateString('es-AR') : 'próximo mes';
+          document.getElementById("modalMensaje").innerHTML = 
+            `<div class="alert alert-warning">
+              <h6 class="alert-heading">⚠️ Límite de observaciones mensuales alcanzado</h6>
+              <p class="mb-2">${j.detail || j.error || 'Ya se alcanzó el límite de 2 observaciones para este proyecto en el mes actual.'}</p>
+              <hr>
+              <p class="mb-0 small">
+                <strong>Observaciones realizadas:</strong> ${j.observaciones_realizadas || 2} de 2
+                <br>
+                <strong>Próximo reinicio:</strong> ${fechaReset}
+              </p>
+            </div>`;
+        } else {
+          document.getElementById("modalMensaje").innerHTML = 
+            `<div class="alert alert-danger">
+              <strong>Error:</strong> ${j.error || 'No se pudieron enviar las observaciones'}
+            </div>`;
+        }
         btnContinuar.disabled = false;
         btnTerminar.disabled = false;
         btnActivo.innerHTML = textoOriginal;
@@ -460,14 +511,39 @@
         return;
       }
       
+      // Función para calcular días restantes si no vienen del backend
+      const calcularDiasRestantes = (obs) => {
+        if (obs.dias_restantes !== null && obs.dias_restantes !== undefined) {
+          return obs.dias_restantes;
+        }
+        
+        // Si no viene del backend, calcular manualmente
+        if (obs.fecha_vencimiento && (obs.estado === 'pendiente' || obs.estado === 'rechazada')) {
+          try {
+            const fechaVenc = new Date(obs.fecha_vencimiento);
+            const ahora = new Date();
+            const diffMs = fechaVenc - ahora;
+            const diffDias = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+            return diffDias;
+          } catch (e) {
+            return null;
+          }
+        }
+        return null;
+      };
+      
       const html = observaciones.map(obs => {
+        const diasRestantes = calcularDiasRestantes(obs);
+        
         let estadoBadge = '';
         if (obs.estado === 'pendiente') {
-          estadoBadge = `<span class="badge bg-warning text-dark">⏳ Pendiente (${obs.dias_restantes} días restantes)</span>`;
+          const diasTexto = diasRestantes !== null ? `${diasRestantes} días restantes` : 'pendiente';
+          estadoBadge = `<span class="badge bg-warning text-dark">⏳ Pendiente (${diasTexto})</span>`;
         } else if (obs.estado === 'respondida') {
           estadoBadge = `<span class="badge bg-success">✓ Respondida</span>`;
         } else if (obs.estado === 'rechazada') {
-          estadoBadge = `<span class="badge bg-danger">❌ Rechazada (pendiente de corrección)</span>`;
+          const diasTexto = diasRestantes !== null && diasRestantes >= 0 ? ` - ${diasRestantes} días para corregir` : '';
+          estadoBadge = `<span class="badge bg-danger">❌ Rechazada (pendiente de corrección${diasTexto})</span>`;
         } else if (obs.estado === 'aprobada') {
           estadoBadge = `<span class="badge bg-success">✅ Aprobada</span>`;
         } else if (obs.estado === 'vencida') {
@@ -497,7 +573,7 @@
                   <small>
                     <strong>Pendiente de respuesta.</strong> 
                     Vence el: ${formatearFecha(obs.fecha_vencimiento)}
-                    ${obs.dias_restantes >= 0 ? `(quedan ${obs.dias_restantes} días)` : '(vencida)'}
+                    ${diasRestantes !== null && diasRestantes >= 0 ? `(quedan ${diasRestantes} días)` : diasRestantes !== null && diasRestantes < 0 ? '(vencida)' : ''}
                   </small>
                 </div>
               `}
