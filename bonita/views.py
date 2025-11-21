@@ -417,7 +417,7 @@ def next_step_api(req: HttpRequest):
                                 "rol": "desconocido",
                                 "proyectoId": proyecto_id,
                                 "pedidoId": pedido_id,
-                                "error": "Rol no determinado. Volvé a intentar el login.",
+                                "error": "Credenciales incorrectas",
                             },
                             status=403,
                         )
