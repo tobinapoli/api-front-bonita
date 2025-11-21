@@ -94,6 +94,13 @@ def compromiso_page(req: HttpRequest):
     }
     return render(req, "bonita/compromiso.html", ctx)
 
+def dashboard_page(req: HttpRequest):
+    """
+    Página del tablero gerencial para el Consejo Directivo.
+    Muestra métricas consolidadas del sistema.
+    """
+    return render(req, "bonita/dashboard.html")
+
 def consejo_page(req: HttpRequest):
     api_base = getattr(settings, "API_BASE_URL", "http://127.0.0.1:8000")
     ctx = {
@@ -1586,6 +1593,102 @@ def cerrar_sesion_consejo_api(req: HttpRequest):
     except Exception as e:
         return JsonResponse(
             {"ok": False, "error": "Error cerrando sesión", "detail": str(e)},
+            status=500,
+        )
+
+
+@csrf_exempt
+def dashboard_datos_api(req: HttpRequest):
+    """
+    Endpoint para obtener métricas del dashboard gerencial.
+    
+    Usa datos de monitoreo almacenados localmente (ProyectoMonitoreo).
+    """
+    if req.method != "GET":
+        return JsonResponse({"error": "GET only"}, status=405)
+    
+    try:
+        from bonita.models import ProyectoMonitoreo, SesionBonita
+        
+        # Consultar proyectos de monitoreo local
+        proyectos = list(ProyectoMonitoreo.objects.all().values())
+        
+        # Calcular métricas básicas desde los datos locales
+        total_proyectos = len(proyectos)
+        
+        # Analizar compromisos desde los datos almacenados
+        total_compromisos = 0
+        for proyecto in proyectos:
+            compromisos = proyecto.get('compromisos_aceptados', [])
+            if isinstance(compromisos, list):
+                total_compromisos += len(compromisos)
+        
+        # Contar sesiones activas
+        sesiones_activas = SesionBonita.objects.count()
+        sesiones_consejo = SesionBonita.objects.filter(proceso="Consejo Directivo").count()
+        sesiones_ongs = SesionBonita.objects.filter(proceso="ProjectPlanning").count()
+        
+        metricas = {
+            "total_proyectos": total_proyectos,
+            "proyectos_planificacion": 0,  # No tenemos esta info localmente
+            "proyectos_ejecucion": total_proyectos,  # Asumimos que están en monitoreo
+            "proyectos_finalizados": 0,
+            
+            "total_pedidos": 0,  # No disponible localmente
+            "pedidos_abiertos": 0,
+            
+            "total_compromisos": total_compromisos,
+            "compromisos_cumplidos": 0,  # No disponible localmente
+            "monto_total_compromisos": 0,
+            "monto_promedio_compromiso": 0,
+            
+            "total_observaciones": 0,  # No disponible localmente
+            "observaciones_pendientes": 0,
+            "observaciones_respondidas": 0,
+            "observaciones_aprobadas": 0,
+            "observaciones_rechazadas": 0,
+            "observaciones_vencidas": 0,
+            
+            "sesiones_activas": sesiones_activas,
+            "sesiones_consejo": sesiones_consejo,
+            "sesiones_ongs": sesiones_ongs,
+        }
+        
+        # Listas simplificadas de proyectos para el dashboard
+        top_proyectos_obs = []
+        top_proyectos_comp = []
+        
+        # Agregar proyectos con compromisos para el top
+        for proyecto in proyectos:
+            compromisos_proyecto = proyecto.get('compromisos_aceptados', [])
+            if isinstance(compromisos_proyecto, list) and len(compromisos_proyecto) > 0:
+                top_proyectos_comp.append({
+                    "id": proyecto.get("proyecto_id"),
+                    "nombre": proyecto.get("nombre", "Sin nombre"),
+                    "total_pedidos": 0,  # No disponible localmente
+                    "total_compromisos": len(compromisos_proyecto)
+                })
+        
+        # Ordenar por total de compromisos
+        top_proyectos_comp.sort(key=lambda x: x["total_compromisos"], reverse=True)
+        top_proyectos_comp = top_proyectos_comp[:5]
+        
+        # Observaciones recientes - vacío por ahora
+        observaciones_recientes = []
+        
+        return JsonResponse({
+            "ok": True,
+            "data": {
+                "metricas": metricas,
+                "top_proyectos_observaciones": top_proyectos_obs,
+                "top_proyectos_compromisos": top_proyectos_comp,
+                "observaciones_recientes": observaciones_recientes
+            }
+        }, status=200)
+        
+    except Exception as e:
+        return JsonResponse(
+            {"ok": False, "error": "Error obteniendo datos del dashboard", "detail": str(e)},
             status=500,
         )
 
