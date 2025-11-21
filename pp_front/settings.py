@@ -5,11 +5,13 @@ from dotenv import load_dotenv
 BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / ".env")
 
+
 def env(k, d=None):
     v = os.getenv(k, d)
     if v is None:
         raise RuntimeError(f"Falta {k}")
     return v
+
 
 # Django
 SECRET_KEY = env("DJANGO_SECRET_KEY")
@@ -67,7 +69,6 @@ USE_TZ = True
 
 STATIC_URL = "static/"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
-
 
 # ============================
 # BONITA CONFIG

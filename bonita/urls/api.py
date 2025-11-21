@@ -23,25 +23,25 @@ from bonita.views import (
     revisar_compromisos_api,
     evaluar_propuestas_api,
     resumen_proyecto_api,
-    red_ongs_salir_api,          
+    red_ongs_salir_api,
     debug_case_variables_api,
     dashboard_datos_api,
 )
 
 urlpatterns = [
-    path("login/",           login_api,                    name="bonita_login_api"),
-    path("iniciar/",         iniciar_proyecto_api,         name="bonita_iniciar"),
-    path("revisar/",         revisar_proyectos_api,        name="bonita_revisar"),
-    path("pedido/",          registrar_pedido_api,         name="bonita_pedido_api"),
-    path("elegir-proyecto/", elegir_proyecto_api,          name="bonita_elegir_proyecto"),
+    path("login/", login_api, name="bonita_login_api"),
+    path("iniciar/", iniciar_proyecto_api, name="bonita_iniciar"),
+    path("revisar/", revisar_proyectos_api, name="bonita_revisar"),
+    path("pedido/", registrar_pedido_api, name="bonita_pedido_api"),
+    path("elegir-proyecto/", elegir_proyecto_api, name="bonita_elegir_proyecto"),
     path("revisar-pedidos/", revisar_pedidos_proyecto_api, name="bonita_revisar_pedidos"),
     path(
         "revisar-pedidos/finalizar/",
         finalizar_revision_pedidos_api,
         name="bonita_finalizar_revision_pedidos",
     ),
-    path("compromiso/",      registrar_compromiso_api,     name="bonita_compromiso_api"),
-    path("next-step/",       next_step_api,                name="bonita_next_step"),
+    path("compromiso/", registrar_compromiso_api, name="bonita_compromiso_api"),
+    path("next-step/", next_step_api, name="bonita_next_step"),
 
     # 🔴 NUEVO: endpoint para cerrar colaboración de Red de ONGs
     path(
@@ -64,9 +64,9 @@ urlpatterns = [
     path("dashboard/datos/", dashboard_datos_api, name="bonita_dashboard_datos"),
 
     # Evaluar propuestas / monitoreo
-    path("revisar-compromisos/", revisar_compromisos_api,  name="bonita_revisar_compromisos"),
-    path("evaluar-propuestas/",  evaluar_propuestas_api,   name="bonita_evaluar_propuestas"),
-    path("resumen-proyecto/",    resumen_proyecto_api,     name="bonita_resumen_proyecto"),
+    path("revisar-compromisos/", revisar_compromisos_api, name="bonita_revisar_compromisos"),
+    path("evaluar-propuestas/", evaluar_propuestas_api, name="bonita_evaluar_propuestas"),
+    path("resumen-proyecto/", resumen_proyecto_api, name="bonita_resumen_proyecto"),
     path("responder-observacion/", responder_observacion_bonita_api, name="bonita_responder_obs"),
     path("finalizar-proyecto/", finalizar_proyecto_api, name="bonita_finalizar_proyecto"),
 

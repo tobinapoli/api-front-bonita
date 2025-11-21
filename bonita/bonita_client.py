@@ -97,11 +97,11 @@ class BonitaClient:
         return self._json(r)
 
     def wait_ready_task_in_case(
-        self,
-        case_id: str,
-        task_name: Optional[str] = None,
-        timeout_sec: float = 12.0,
-        interval_sec: float = 0.4,
+            self,
+            case_id: str,
+            task_name: Optional[str] = None,
+            timeout_sec: float = 12.0,
+            interval_sec: float = 0.4,
     ) -> Optional[Dict[str, Any]]:
         """
         Espera hasta que haya una tarea humana en estado 'ready'

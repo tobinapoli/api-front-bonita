@@ -11,7 +11,8 @@ import requests
 
 from .bonita_client import BonitaClient
 from .validators import validate_iniciar_payload
-from .models import ProyectoMonitoreo, SesionBonita   # <--- AGREGADO SesionBonita
+from .models import ProyectoMonitoreo, SesionBonita  # <--- AGREGADO SesionBonita
+
 
 # --------------------------- Helpers ---------------------------
 
@@ -23,15 +24,16 @@ def _marcar_observaciones_vencidas_si_aplica(proyecto_id: int, jwt_token: str) -
     try:
         api_base = getattr(settings, "API_BASE_URL", "http://127.0.0.1:8000")
         url = f"{api_base}/api/admin/observaciones/vencidas/"
-        
+
         headers = {
             "Authorization": f"Bearer {jwt_token}",
             "Content-Type": "application/json",
         }
-        
+
         requests.post(url, headers=headers, timeout=5)
     except Exception:
         pass
+
 
 # --------------------------- Páginas HTML ---------------------------
 
@@ -55,14 +57,13 @@ def nuevo_proyecto_page(req: HttpRequest):
     return render(req, "bonita/nuevo.html", ctx)
 
 
-
-
 def revisar_proyectos_page(req: HttpRequest):
     ctx = {
         "case": req.GET.get("case", ""),
         "rol": req.GET.get("rol", "")
     }
     return render(req, "bonita/revisar.html", ctx)
+
 
 def pedido_page(req: HttpRequest):
     """
@@ -94,12 +95,14 @@ def compromiso_page(req: HttpRequest):
     }
     return render(req, "bonita/compromiso.html", ctx)
 
+
 def dashboard_page(req: HttpRequest):
     """
     Página del tablero gerencial para el Consejo Directivo.
     Muestra métricas consolidadas del sistema.
     """
     return render(req, "bonita/dashboard.html")
+
 
 def consejo_page(req: HttpRequest):
     api_base = getattr(settings, "API_BASE_URL", "http://127.0.0.1:8000")
@@ -108,6 +111,7 @@ def consejo_page(req: HttpRequest):
         "API_BASE_URL": api_base
     }
     return render(req, "bonita/consejo.html", ctx)
+
 
 def evaluar_propuestas_page(req: HttpRequest):
     ctx = {
@@ -124,6 +128,7 @@ def monitoreo_proyecto_page(req: HttpRequest):
         "proyecto": req.GET.get("proyecto", ""),
     }
     return render(req, "bonita/monitoreo.html", ctx)
+
 
 # --------------------------- Helpers ---------------------------
 
@@ -258,7 +263,7 @@ def next_step_api(req: HttpRequest):
         proyecto_id = None
         pedido_id = None
         rol_usuario = None
-        
+
         # Leer proyectoId
         try:
             var_proyecto = cli.get_case_variable(case_id, "proyectoId")
@@ -268,7 +273,7 @@ def next_step_api(req: HttpRequest):
                     proyecto_id = str(val).strip()
         except Exception:
             pass
-        
+
         # Leer pedidoId
         try:
             var_pedido = cli.get_case_variable(case_id, "pedidoId")
@@ -278,7 +283,7 @@ def next_step_api(req: HttpRequest):
                     pedido_id = str(val).strip()
         except Exception:
             pass
-        
+
         # Leer rol
         try:
             var_rol = cli.get_case_variable(case_id, "rol")
@@ -295,36 +300,36 @@ def next_step_api(req: HttpRequest):
             task_name=None,
             timeout_sec=8,  # antes 3
         )
-        
+
         name = ""
         rol = "desconocido"
         url = f"/bonita/home/?case={case_id}"
 
         if task:
             name = (task.get("name") or task.get("displayName") or "").strip()
-            
+
             if name == "Definir plan de trabajo y economico":
                 rol = "ong_originante"
                 url = f"/bonita/nuevo/?case={case_id}"
-                
+
             elif name == "Revisar proyectos":
                 rol = "red_ongs"
                 url = f"/bonita/revisar/?case={case_id}"
-                
+
             elif name == "Registrar pedido":
                 rol = "ong_originante"
                 if proyecto_id:
                     url = f"/bonita/pedido/?case={case_id}&proyecto={proyecto_id}"
                 else:
                     url = f"/bonita/pedido/?case={case_id}"
-                    
+
             elif name == "Revisar pedidos":
                 rol = "red_ongs"
                 if proyecto_id:
                     url = f"/bonita/ver-pedidos/?case={case_id}&proyecto={proyecto_id}"
                 else:
                     url = f"/bonita/ver-pedidos/?case={case_id}"
-                    
+
             elif name == "Registrar compromiso":
                 rol = "red_ongs"
                 if proyecto_id and pedido_id:
@@ -333,29 +338,29 @@ def next_step_api(req: HttpRequest):
                     url = f"/bonita/compromiso/?case={case_id}&proyecto={proyecto_id}&rol=red_ongs"
                 else:
                     url = f"/bonita/compromiso/?case={case_id}&rol=red_ongs"
-            
+
             elif name == "Evaluar propuestas":
                 rol = "ong_originante"
                 if proyecto_id:
                     url = f"/bonita/evaluar/?case={case_id}&proyecto={proyecto_id}"
                 else:
                     url = f"/bonita/evaluar/?case={case_id}"
-                    
+
             elif name == "Monitorear ejecución / transparencia":
                 rol = "ong_originante"
                 if proyecto_id:
                     url = f"/bonita/monitoreo/?case={case_id}&proyecto={proyecto_id}"
                 else:
                     url = f"/bonita/monitoreo/?case={case_id}"
-                    
+
             elif name == "Revisar proyecto y cargar observaciones":
                 rol = "consejo_directivo"
                 url = f"/bonita/consejo/?case={case_id}"
-                
-            elif name == "Evaluar Respuestas":  
+
+            elif name == "Evaluar Respuestas":
                 rol = "consejo_directivo"
                 url = f"/bonita/consejo/evaluar/?case={case_id}"
-                
+
             elif name == "Resolver observaciones":
                 rol = "ong_originante"
                 if proyecto_id:
@@ -364,7 +369,7 @@ def next_step_api(req: HttpRequest):
                     url = f"/bonita/monitoreo/?case={case_id}"
         else:
             name = "Sin tarea ready - inferido por variables"
-            
+
             if proyecto_id:
                 # Si ya hay proyecto, misma lógica que tenías
                 if rol_usuario:
@@ -467,11 +472,13 @@ def next_step_api(req: HttpRequest):
             status=500,
         )
 
+
 def consejo_evaluar_page(req: HttpRequest):
     ctx = {
         "case": req.GET.get("case", "")
     }
     return render(req, "bonita/consejo_evaluar.html", ctx)
+
 
 @csrf_exempt
 def debug_case_variables_api(req: HttpRequest):
@@ -485,7 +492,7 @@ def debug_case_variables_api(req: HttpRequest):
     try:
         cli = BonitaClient()
         cli.login()
-        
+
         # Listar todas las variables del caso
         r = cli.s.get(
             f"{cli.api}/bpm/caseVariable",
@@ -495,10 +502,10 @@ def debug_case_variables_api(req: HttpRequest):
         )
         r.raise_for_status()
         variables = r.json() if r.text else []
-        
+
         # También obtener info del caso
         case_info = cli.get_case(case_id)
-        
+
         return JsonResponse({
             "ok": True,
             "caseId": case_id,
@@ -508,6 +515,7 @@ def debug_case_variables_api(req: HttpRequest):
         })
     except Exception as e:
         return JsonResponse({"error": str(e)}, status=500)
+
 
 @csrf_exempt
 def obtener_datos_evaluacion_api(req: HttpRequest):
@@ -522,10 +530,10 @@ def obtener_datos_evaluacion_api(req: HttpRequest):
     try:
         cli = BonitaClient()
         cli.login()
-        
+
         # Leemos la variable donde el conector GET guardó la respuesta
         var = cli.get_case_variable(case_id, "respuestasJson")
-        
+
         lista = []
         if var and "value" in var and var["value"]:
             try:
@@ -538,6 +546,7 @@ def obtener_datos_evaluacion_api(req: HttpRequest):
     except Exception as e:
         return JsonResponse({"ok": False, "error": str(e)}, status=500)
 
+
 @csrf_exempt
 def enviar_evaluacion_consejo_api(req: HttpRequest):
     """
@@ -545,7 +554,7 @@ def enviar_evaluacion_consejo_api(req: HttpRequest):
     """
     if req.method != "POST":
         return JsonResponse({"error": "POST only"}, status=405)
-        
+
     data = _json(req)
     case_id = str(data.get("caseId") or "").strip()
     obs_id = data.get("observacionId")
@@ -557,14 +566,14 @@ def enviar_evaluacion_consejo_api(req: HttpRequest):
     try:
         cli = BonitaClient()
         cli.login()
-        
+
         assignee_username = getattr(settings, "BONITA_ASSIGNEE", "walter.bates")
         user_id = cli.get_user_id_by_username(assignee_username)
 
         # Buscar tarea
         task = cli.wait_ready_task_in_case(case_id, "Evaluar Respuestas", timeout_sec=10)
         if not task:
-             return JsonResponse({"ok": False, "error": "La tarea 'Evaluar Respuestas' no está lista."}, status=409)
+            return JsonResponse({"ok": False, "error": "La tarea 'Evaluar Respuestas' no está lista."}, status=409)
 
         # Ejecutar tarea
         cli.assign_task(task["id"], user_id)
@@ -578,6 +587,8 @@ def enviar_evaluacion_consejo_api(req: HttpRequest):
 
     except Exception as e:
         return JsonResponse({"ok": False, "error": str(e)}, status=500)
+
+
 # --------------------------- API: Iniciar proyecto ---------------------------
 
 @csrf_exempt
@@ -694,9 +705,9 @@ def iniciar_proyecto_api(req: HttpRequest):
 
                 if isinstance(obj, dict):
                     proyecto_id = (
-                        obj.get("id")
-                        or obj.get("proyectoId")
-                        or obj.get("id_proyecto")
+                            obj.get("id")
+                            or obj.get("proyectoId")
+                            or obj.get("id_proyecto")
                     )
 
         # ---------- Guardar snapshot en la BD local ----------
@@ -738,7 +749,6 @@ def iniciar_proyecto_api(req: HttpRequest):
         )
 
 
-
 # --------------------------- API: Registrar pedido ---------------------------
 
 @csrf_exempt
@@ -759,8 +769,8 @@ def registrar_pedido_api(req: HttpRequest):
         return JsonResponse({"error": "POST only"}, status=405)
 
     data = _json(req)
-    case_id        = str(data.get("caseId") or "").strip()
-    pedido_tipo    = str(data.get("pedidoTipo") or "").strip()
+    case_id = str(data.get("caseId") or "").strip()
+    pedido_tipo = str(data.get("pedidoTipo") or "").strip()
     pedido_detalle = str(data.get("pedidoDetalle") or "").strip()
 
     if not case_id:
@@ -804,7 +814,7 @@ def registrar_pedido_api(req: HttpRequest):
         # Asignar y ejecutar la tarea con el contrato de Bonita
         cli.assign_task(task["id"], user_id)
         payload_contrato = {
-            "pedidoTipo":    pedido_tipo,
+            "pedidoTipo": pedido_tipo,
             "pedidoDetalle": pedido_detalle,
         }
         cli.execute_task(task["id"], payload_contrato)
@@ -858,7 +868,6 @@ def registrar_pedido_api(req: HttpRequest):
             {"ok": False, "error": "Error integrando con Bonita", "detail": str(e)},
             status=500,
         )
-
 
 
 @csrf_exempt
@@ -927,7 +936,7 @@ def elegir_proyecto_api(req: HttpRequest):
         cli.assign_task(task["id"], user_id)
         contract_payload = {
             "proyectoSeleccionadoId": proyecto_id_int,
-            "seguirColaborando": True,   # NUEVO: sigue colaborando
+            "seguirColaborando": True,  # NUEVO: sigue colaborando
         }
         cli.execute_task(task["id"], contract_payload)
 
@@ -947,6 +956,7 @@ def elegir_proyecto_api(req: HttpRequest):
             {"ok": False, "error": "Error integrando con Bonita", "detail": str(e)},
             status=500,
         )
+
 
 # --------------------------- API: Revisar proyectos ---------------------------
 
@@ -1027,6 +1037,7 @@ def revisar_pedidos_proyecto_api(req: HttpRequest):
             {"error": "Error consultando Bonita", "detail": str(e)},
             status=500,
         )
+
 
 @csrf_exempt
 def finalizar_revision_pedidos_api(req: HttpRequest):
@@ -1114,11 +1125,11 @@ def registrar_compromiso_api(req: HttpRequest):
         return JsonResponse({"error": "POST only"}, status=405)
 
     data = _json(req)
-    case_id      = str(data.get("caseId") or "").strip()
-    comp_tipo    = str(data.get("compromisoTipo") or "").strip()
+    case_id = str(data.get("caseId") or "").strip()
+    comp_tipo = str(data.get("compromisoTipo") or "").strip()
     comp_detalle = str(data.get("compromisoDetalle") or "").strip()
-    pedido_raw   = data.get("pedidoId")
-    seguir_raw   = data.get("seguirColaborando", True)
+    pedido_raw = data.get("pedidoId")
+    seguir_raw = data.get("seguirColaborando", True)
 
     if not case_id:
         return JsonResponse({"ok": False, "error": "Falta caseId"}, status=400)
@@ -1173,7 +1184,7 @@ def registrar_compromiso_api(req: HttpRequest):
             "compromisoTipo": comp_tipo,
             "compromisoDetalle": comp_detalle,
             "pedidoId": pedido_id,
-            "seguirColaborando": seguir_colaborando,   # NUEVO
+            "seguirColaborando": seguir_colaborando,  # NUEVO
         }
         cli.execute_task(task["id"], payload_contrato)
 
@@ -1225,10 +1236,10 @@ def registrar_compromiso_api(req: HttpRequest):
         return JsonResponse(
             {"ok": False, "error": "Error integrando con Bonita", "detail": str(e)},
             status=500,
-        )   
+        )
 
+    # --------------------------- API: Consejo Directivo ---------------------------
 
-# --------------------------- API: Consejo Directivo ---------------------------
 
 # --------------------------- Helpers para observaciones ---------------------------
 
@@ -1252,24 +1263,24 @@ def calcular_limite_manual(proyecto: dict) -> dict:
     """
     # El campo total_observaciones es el más confiable si existe
     total_obs = proyecto.get("total_observaciones", 0)
-    
+
     # Si no existe, sumar los contadores individuales
     if total_obs == 0:
         total_obs = (
-            (proyecto.get("observaciones_pendientes") or 0) +
-            (proyecto.get("observaciones_rechazadas") or 0) +
-            (proyecto.get("observaciones_respondidas") or 0) +
-            (proyecto.get("observaciones_vencidas") or 0)
+                (proyecto.get("observaciones_pendientes") or 0) +
+                (proyecto.get("observaciones_rechazadas") or 0) +
+                (proyecto.get("observaciones_respondidas") or 0) +
+                (proyecto.get("observaciones_vencidas") or 0)
         )
-    
+
     # Si tiene 2 o más observaciones, límite alcanzado
     puede_observar = total_obs < 2
-    
+
     return {
         "puede_observar": puede_observar,
         "observaciones_realizadas": total_obs,
-        "mensaje": f"Se han realizado {total_obs} de 2 observaciones permitidas este mes" if total_obs < 2 
-                   else f"Ya se realizaron {total_obs} de 2 observaciones permitidas este mes",
+        "mensaje": f"Se han realizado {total_obs} de 2 observaciones permitidas este mes" if total_obs < 2
+        else f"Ya se realizaron {total_obs} de 2 observaciones permitidas este mes",
         "fecha_reset": None  # No podemos calcular esto sin acceso a la BD
     }
 
@@ -1299,13 +1310,13 @@ def obtener_proyectos_en_ejecucion_api(req: HttpRequest):
         # Leer la variable 'proyectosJson' que debería contener los proyectos
         # en ejecución obtenidos por el conector de entrada de Bonita
         var = cli.get_case_variable(case_id, "proyectosJson")
-        
+
         if not var or "value" not in var or not (var["value"] or "").strip():
             return JsonResponse(
                 {
-                    "ok": True, 
-                    "caseId": case_id, 
-                    "proyectos": [], 
+                    "ok": True,
+                    "caseId": case_id,
+                    "proyectos": [],
                     "mensaje": "No hay proyectos en ejecución para revisar"
                 },
                 status=200,
@@ -1329,7 +1340,7 @@ def obtener_proyectos_en_ejecucion_api(req: HttpRequest):
         jwt_token = None
         if var_access and "value" in var_access:
             jwt_token = var_access["value"]
-        
+
         if jwt_token and isinstance(proyectos, list):
             api_base = getattr(settings, "API_BASE_URL", "http://127.0.0.1:8000")
             for proyecto in proyectos:
@@ -1350,9 +1361,11 @@ def obtener_proyectos_en_ejecucion_api(req: HttpRequest):
                         else:
                             # Endpoint no implementado o error - usar cálculo manual (fallback)
                             if res_limite.status_code == 404:
-                                print(f"Info: Endpoint de límite no implementado para proyecto {proyecto_id}, usando cálculo manual")
+                                print(
+                                    f"Info: Endpoint de límite no implementado para proyecto {proyecto_id}, usando cálculo manual")
                             else:
-                                print(f"Advertencia: Error obteniendo límite para proyecto {proyecto_id}: Status {res_limite.status_code}")
+                                print(
+                                    f"Advertencia: Error obteniendo límite para proyecto {proyecto_id}: Status {res_limite.status_code}")
                             proyecto["limite_observaciones"] = calcular_limite_manual(proyecto)
                 except Exception as e:
                     print(f"Excepción obteniendo límite para proyecto {proyecto.get('id')}: {e}")
@@ -1365,14 +1378,14 @@ def obtener_proyectos_en_ejecucion_api(req: HttpRequest):
 
         return JsonResponse(
             {
-                "ok": True, 
-                "caseId": case_id, 
+                "ok": True,
+                "caseId": case_id,
                 "proyectos": proyectos,
                 "count": len(proyectos) if isinstance(proyectos, list) else 0
-            }, 
+            },
             status=200
         )
-        
+
     except Exception as e:
         return JsonResponse(
             {"error": "Error consultando Bonita", "detail": str(e)},
@@ -1444,7 +1457,7 @@ def enviar_observaciones_consejo_api(req: HttpRequest):
                     },
                     timeout=10
                 )
-                
+
                 if res_limite.status_code == 200:
                     limite_info = res_limite.json()
                     if not limite_info.get("puede_observar", True):
@@ -1453,7 +1466,8 @@ def enviar_observaciones_consejo_api(req: HttpRequest):
                             {
                                 "ok": False,
                                 "error": "Límite de observaciones mensuales alcanzado",
-                                "detail": limite_info.get("mensaje", "Ya se alcanzó el límite de 2 observaciones este mes"),
+                                "detail": limite_info.get("mensaje",
+                                                          "Ya se alcanzó el límite de 2 observaciones este mes"),
                                 "observaciones_realizadas": limite_info.get("observaciones_realizadas", 2),
                                 "fecha_reset": limite_info.get("fecha_reset")
                             },
@@ -1477,7 +1491,7 @@ def enviar_observaciones_consejo_api(req: HttpRequest):
             task_name="Revisar proyecto y cargar observaciones",
             timeout_sec=15,
         )
-        
+
         if not task:
             # La tarea ya fue ejecutada (navegación desde pestaña vieja)
             return JsonResponse(
@@ -1537,12 +1551,12 @@ def enviar_observaciones_consejo_api(req: HttpRequest):
             error_detail = "Ya se alcanzó el límite de 2 observaciones este mes"
             obs_realizadas = 2
             fecha_reset = None
-            
+
             if body_observacion and isinstance(body_observacion, dict):
                 error_detail = body_observacion.get("detail", error_detail)
                 obs_realizadas = body_observacion.get("observaciones_realizadas", 2)
                 fecha_reset = body_observacion.get("fecha_reset")
-            
+
             return JsonResponse(
                 {
                     "ok": False,
@@ -1615,7 +1629,7 @@ def cerrar_sesion_consejo_api(req: HttpRequest):
             task_name="Revisar proyecto y cargar observaciones",
             timeout_sec=5,
         )
-        
+
         if not task:
             # No hay tarea pendiente, considerar que ya terminó
             return JsonResponse(
@@ -1979,24 +1993,24 @@ def ver_observaciones_proyecto_api(req: HttpRequest, proyecto_id: int):
     y días restantes.
     """
     import requests
-    
+
     case_id = (req.GET.get("case") or req.GET.get("caseId") or "").strip()
     proyecto_id_raw = proyecto_id
-    
+
     if not case_id:
         return JsonResponse({"error": "Falta caseId/case"}, status=400)
     if not proyecto_id_raw:
         return JsonResponse({"error": "Falta proyectoId en URL"}, status=400)
-    
+
     try:
         proyecto_id = int(proyecto_id_raw)
     except (TypeError, ValueError):
         return JsonResponse({"error": "proyectoId debe ser entero"}, status=400)
-    
+
     try:
         cli = BonitaClient()
         cli.login()
-        
+
         # Obtener el token JWT de la variable del caso
         var_token = cli.get_case_variable(case_id, "access")
         if not var_token or "value" not in var_token or not (var_token["value"] or "").strip():
@@ -2004,24 +2018,24 @@ def ver_observaciones_proyecto_api(req: HttpRequest, proyecto_id: int):
                 {"error": "No se encontró token de autenticación en el caso"},
                 status=401,
             )
-        
+
         jwt_token = var_token["value"].strip()
-        
+
         # Marcar observaciones vencidas antes de consultar
         _marcar_observaciones_vencidas_si_aplica(proyecto_id, jwt_token)
-        
+
         # Construir URL de la API
         api_base_url = getattr(settings, "API_BASE_URL", "http://127.0.0.1:8000")
         url = f"{api_base_url}/api/proyectos/{proyecto_id}/observaciones/"
-        
+
         # Hacer request a la API JWT
         headers = {
             "Authorization": f"Bearer {jwt_token}",
             "Content-Type": "application/json",
         }
-        
+
         response = requests.get(url, headers=headers, timeout=10)
-        
+
         if response.status_code == 401:
             return JsonResponse(
                 {
@@ -2052,7 +2066,7 @@ def ver_observaciones_proyecto_api(req: HttpRequest, proyecto_id: int):
                 },
                 status=response.status_code,
             )
-            
+
     except requests.RequestException as e:
         return JsonResponse(
             {"ok": False, "error": "Error de conexión con API", "detail": str(e)},
@@ -2063,6 +2077,7 @@ def ver_observaciones_proyecto_api(req: HttpRequest, proyecto_id: int):
             {"ok": False, "error": "Error consultando observaciones", "detail": str(e)},
             status=500,
         )
+
 
 # --------------------------- API: Revisar compromisos (Evaluar propuestas) ---
 
@@ -2255,9 +2270,6 @@ def _append_compromiso_aceptado(cli: BonitaClient, case_id: str, compromiso_id: 
     except Exception:
         # Tampoco rompemos el flujo si falla sólo la sincronización local
         pass
-
-
-
 
 
 # --------------------------- API: Ejecutar 'Evaluar propuestas' --------------
@@ -2550,7 +2562,7 @@ def resumen_proyecto_api(req: HttpRequest):
             try:
                 # Primero marcar las vencidas si aplica
                 _marcar_observaciones_vencidas_si_aplica(proyecto_id, jwt_token)
-                
+
                 api_base = getattr(settings, "API_BASE_URL", "http://127.0.0.1:8000")
                 url_obs = f"{api_base}/api/proyectos/{proyecto_id}/observaciones/"
 
@@ -2570,10 +2582,10 @@ def resumen_proyecto_api(req: HttpRequest):
                     }, status=401)
                 if resp_obs.status_code == 200:
                     lista_obs = resp_obs.json()
-                    
+
                     # Guardar el historial completo de observaciones
                     historial_observaciones = lista_obs
-                    
+
                     # Buscar observaciones pendientes/rechazadas/vencidas para mostrar
                     pendientes = [
                         o for o in lista_obs
@@ -2613,7 +2625,6 @@ def resumen_proyecto_api(req: HttpRequest):
         )
 
 
-
 @csrf_exempt
 def responder_observacion_bonita_api(req: HttpRequest):
     """
@@ -2634,51 +2645,51 @@ def responder_observacion_bonita_api(req: HttpRequest):
     try:
         cli = BonitaClient()
         cli.login()
-        
+
         # Obtener token para verificar estado de la observación
         var_access = cli.get_case_variable(case_id, "access")
         if var_access and "value" in var_access:
             jwt_token = (var_access["value"] or "").strip()
-            
+
             # Verificar el estado actual de la observación
             try:
                 var_proyecto = cli.get_case_variable(case_id, "proyectoId")
                 if var_proyecto and "value" in var_proyecto:
                     proyecto_id = var_proyecto["value"]
-                    
+
                     # Marcar vencidas primero
                     _marcar_observaciones_vencidas_si_aplica(proyecto_id, jwt_token)
-                    
+
                     # Consultar el estado actual
                     api_base = getattr(settings, "API_BASE_URL", "http://127.0.0.1:8000")
                     url_obs = f"{api_base}/api/proyectos/{proyecto_id}/observaciones/"
-                    
+
                     headers = {
                         "Authorization": f"Bearer {jwt_token}",
                         "Content-Type": "application/json",
                     }
-                    
+
                     resp = requests.get(url_obs, headers=headers, timeout=3)
                     if resp.status_code == 200:
                         observaciones = resp.json()
                         obs_actual = next((o for o in observaciones if o.get("id") == int(obs_id)), None)
-                        
+
                         if obs_actual and obs_actual.get("estado") == "vencida":
                             return JsonResponse({
-                                "ok": False, 
+                                "ok": False,
                                 "error": "Esta observación ya venció. No se puede responder."
                             }, status=400)
             except Exception:
                 pass  # Si falla la verificación, continuar igual
-        
+
         assignee_username = getattr(settings, "BONITA_ASSIGNEE", "walter.bates")
         user_id = cli.get_user_id_by_username(assignee_username)
 
         # Buscar tarea "Monitorear ejecución"
         task = cli.wait_ready_task_in_case(case_id, "Monitorear ejecución / transparencia", timeout_sec=5)
-        
+
         if not task:
-             return JsonResponse({"ok": False, "error": "La tarea de monitoreo no está lista."}, status=409)
+            return JsonResponse({"ok": False, "error": "La tarea de monitoreo no está lista."}, status=409)
 
         # Ejecutar con acción RESPONDER
         cli.assign_task(task["id"], user_id)
@@ -2723,23 +2734,23 @@ def finalizar_proyecto_api(req: HttpRequest):
     try:
         cli = BonitaClient()
         cli.login()
-        
+
         # Obtener token JWT para verificar observaciones
         var_access = cli.get_case_variable(case_id, "access")
         if not var_access or "value" not in var_access:
             return JsonResponse({"ok": False, "error": "No se encontró token de autenticación"}, status=401)
-        
+
         jwt_token = (var_access["value"] or "").strip()
-        
+
         # Verificar que no haya observaciones problemáticas
         api_base = getattr(settings, "API_BASE_URL", "http://127.0.0.1:8000")
         url_obs = f"{api_base}/api/proyectos/{proyecto_id}/observaciones/"
-        
+
         headers = {
             "Authorization": f"Bearer {jwt_token}",
             "Content-Type": "application/json",
         }
-        
+
         try:
             resp_obs = requests.get(url_obs, headers=headers, timeout=5)
             if resp_obs.status_code == 200:
@@ -2748,7 +2759,7 @@ def finalizar_proyecto_api(req: HttpRequest):
                     o for o in lista_obs
                     if o.get("estado") in ["pendiente", "rechazada", "respondida"]
                 ]
-                
+
                 if observaciones_problematicas:
                     return JsonResponse({
                         "ok": False,
@@ -2758,14 +2769,14 @@ def finalizar_proyecto_api(req: HttpRequest):
         except requests.RequestException as e:
             print(f"Error consultando observaciones: {e}")
             # Continuar de todas formas si no podemos verificar
-        
+
         # Cambiar estado del proyecto a 'finalizado' en la API
         url_cambiar_estado = f"{api_base}/api/proyectos/{proyecto_id}/estado/"
         payload_estado = {"estado": "finalizado"}
-        
+
         try:
             resp_estado = requests.post(url_cambiar_estado, headers=headers, json=payload_estado, timeout=5)
-            
+
             if resp_estado.status_code not in [200, 201]:
                 return JsonResponse({
                     "ok": False,
@@ -2779,11 +2790,11 @@ def finalizar_proyecto_api(req: HttpRequest):
                 "error": "Error de red al cambiar estado del proyecto",
                 "detail": str(e)
             }, status=500)
-        
+
         # Ejecutar tarea en Bonita con accion='FINALIZAR'
         assignee_username = getattr(settings, "BONITA_ASSIGNEE", "walter.bates")
         user_id = cli.get_user_id_by_username(assignee_username)
-        
+
         if not user_id:
             return JsonResponse({
                 "ok": False,
@@ -2793,7 +2804,7 @@ def finalizar_proyecto_api(req: HttpRequest):
 
         # Buscar tarea "Monitorear ejecución / transparencia"
         task = cli.wait_ready_task_in_case(case_id, "Monitorear ejecución / transparencia", timeout_sec=5)
-        
+
         if not task:
             # Si no hay tarea, puede ser que ya terminó o no está en ese estado
             return JsonResponse({
@@ -2808,9 +2819,9 @@ def finalizar_proyecto_api(req: HttpRequest):
         contract = {
             "accion": "FINALIZAR",
             "observacionId": 0,  # Valor dummy, no se usa para finalizar
-            "respuesta": ""      # Texto vacío, no se usa para finalizar
+            "respuesta": ""  # Texto vacío, no se usa para finalizar
         }
-        
+
         try:
             cli.execute_task(task["id"], contract)
         except Exception as e:
@@ -2839,7 +2850,8 @@ def finalizar_proyecto_api(req: HttpRequest):
             "detail": str(e),
             "type": type(e).__name__
         }, status=500)
-        
+
+
 @csrf_exempt
 def red_ongs_salir_api(req: HttpRequest):
     """
