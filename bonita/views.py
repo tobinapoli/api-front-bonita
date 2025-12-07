@@ -13,6 +13,26 @@ from .bonita_client import BonitaClient
 from .validators import validate_iniciar_payload
 from .models import ProyectoMonitoreo, SesionBonita   # <--- AGREGADO SesionBonita
 
+# --------------------------- Helpers ---------------------------
+
+def _marcar_observaciones_vencidas_si_aplica(proyecto_id: int, jwt_token: str) -> None:
+    """
+    Verifica y marca como vencidas las observaciones pendientes 
+    que hayan superado los 5 días.
+    """
+    try:
+        api_base = getattr(settings, "API_BASE_URL", "http://127.0.0.1:8000")
+        url = f"{api_base}/api/admin/observaciones/vencidas/"
+        
+        headers = {
+            "Authorization": f"Bearer {jwt_token}",
+            "Content-Type": "application/json",
+        }
+        
+        requests.post(url, headers=headers, timeout=5)
+    except Exception:
+        pass
+
 # --------------------------- Páginas HTML ---------------------------
 
 def index_page(req: HttpRequest):
@@ -1464,6 +1484,9 @@ def ver_observaciones_proyecto_api(req: HttpRequest, proyecto_id: int):
         
         jwt_token = var_token["value"].strip()
         
+        # Marcar observaciones vencidas antes de consultar
+        _marcar_observaciones_vencidas_si_aplica(proyecto_id, jwt_token)
+        
         # Construir URL de la API
         api_base_url = getattr(settings, "API_BASE_URL", "http://127.0.0.1:8000")
         url = f"{api_base_url}/api/proyectos/{proyecto_id}/observaciones/"
@@ -1476,7 +1499,17 @@ def ver_observaciones_proyecto_api(req: HttpRequest, proyecto_id: int):
         
         response = requests.get(url, headers=headers, timeout=10)
         
-        if response.status_code == 200:
+        if response.status_code == 401:
+            return JsonResponse(
+                {
+                    "ok": False,
+                    "error": "Token expirado",
+                    "detail": "La sesión ha expirado. Por favor, inicie sesión nuevamente.",
+                    "needsLogin": True
+                },
+                status=401,
+            )
+        elif response.status_code == 200:
             observaciones = response.json()
             return JsonResponse(
                 {
@@ -1992,6 +2025,9 @@ def resumen_proyecto_api(req: HttpRequest):
         historial_observaciones = []
         if proyecto_id and jwt_token:
             try:
+                # Primero marcar las vencidas si aplica
+                _marcar_observaciones_vencidas_si_aplica(proyecto_id, jwt_token)
+                
                 api_base = getattr(settings, "API_BASE_URL", "http://127.0.0.1:8000")
                 url_obs = f"{api_base}/api/proyectos/{proyecto_id}/observaciones/"
 
@@ -2001,16 +2037,24 @@ def resumen_proyecto_api(req: HttpRequest):
                 }
 
                 resp_obs = requests.get(url_obs, headers=headers, timeout=5)
+                if resp_obs.status_code == 401:
+                    # Token expirado - informar al usuario que debe hacer login nuevamente
+                    return JsonResponse({
+                        "ok": False,
+                        "error": "Token expirado",
+                        "detail": "La sesión ha expirado. Por favor, inicie sesión nuevamente.",
+                        "needsLogin": True
+                    }, status=401)
                 if resp_obs.status_code == 200:
                     lista_obs = resp_obs.json()
                     
                     # Guardar el historial completo de observaciones
                     historial_observaciones = lista_obs
                     
-                    # Buscar observaciones pendientes/rechazadas para bloqueo
+                    # Buscar observaciones pendientes/rechazadas/vencidas para mostrar
                     pendientes = [
                         o for o in lista_obs
-                        if o.get("estado") in ["pendiente", "rechazada"]
+                        if o.get("estado") in ["pendiente", "rechazada", "vencida"]
                     ]
                     if pendientes:
                         ultima = sorted(pendientes, key=lambda x: x.get("id", 0))[-1]
@@ -2051,6 +2095,7 @@ def resumen_proyecto_api(req: HttpRequest):
 def responder_observacion_bonita_api(req: HttpRequest):
     """
     Ejecuta la tarea 'Monitorear ejecución' con accion='RESPONDER'.
+    Primero verifica en la API si la observación aún está pendiente y no venció.
     """
     if req.method != "POST":
         return JsonResponse({"error": "POST only"}, status=405)
@@ -2066,6 +2111,42 @@ def responder_observacion_bonita_api(req: HttpRequest):
     try:
         cli = BonitaClient()
         cli.login()
+        
+        # Obtener token para verificar estado de la observación
+        var_access = cli.get_case_variable(case_id, "access")
+        if var_access and "value" in var_access:
+            jwt_token = (var_access["value"] or "").strip()
+            
+            # Verificar el estado actual de la observación
+            try:
+                var_proyecto = cli.get_case_variable(case_id, "proyectoId")
+                if var_proyecto and "value" in var_proyecto:
+                    proyecto_id = var_proyecto["value"]
+                    
+                    # Marcar vencidas primero
+                    _marcar_observaciones_vencidas_si_aplica(proyecto_id, jwt_token)
+                    
+                    # Consultar el estado actual
+                    api_base = getattr(settings, "API_BASE_URL", "http://127.0.0.1:8000")
+                    url_obs = f"{api_base}/api/proyectos/{proyecto_id}/observaciones/"
+                    
+                    headers = {
+                        "Authorization": f"Bearer {jwt_token}",
+                        "Content-Type": "application/json",
+                    }
+                    
+                    resp = requests.get(url_obs, headers=headers, timeout=3)
+                    if resp.status_code == 200:
+                        observaciones = resp.json()
+                        obs_actual = next((o for o in observaciones if o.get("id") == int(obs_id)), None)
+                        
+                        if obs_actual and obs_actual.get("estado") == "vencida":
+                            return JsonResponse({
+                                "ok": False, 
+                                "error": "Esta observación ya venció. No se puede responder."
+                            }, status=400)
+            except Exception:
+                pass  # Si falla la verificación, continuar igual
         
         assignee_username = getattr(settings, "BONITA_ASSIGNEE", "walter.bates")
         user_id = cli.get_user_id_by_username(assignee_username)
