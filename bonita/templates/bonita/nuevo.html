@@ -31,35 +31,52 @@
             <textarea name="descripcion" class="form-control" rows="3" placeholder="Breve descripción"></textarea>
           </div>
 
+          <!-- PLAN DE TRABAJO CON ETAPAS DINÁMICAS -->
           <fieldset class="border p-3 mb-4 rounded">
-            <legend class="float-none w-auto px-2 fw-semibold text-primary">Metadata del proyecto</legend>
-            <div class="row g-3">
-              <div class="col-md-6">
-                <label class="form-label">Inicio previsto</label>
-                <input type="date" id="metaIniInput" name="metadata.fechaInicioPrevista" class="form-control" required>
-              </div>
-              <div class="col-md-6">
-                <label class="form-label">Fin previsto</label>
-                <input type="date" id="metaFinInput" name="metadata.fechaFinPrevista" class="form-control" required>
-              </div>
-            </div>
-          </fieldset>
+            <legend class="float-none w-auto px-2 fw-semibold text-primary">Plan de trabajo</legend>
 
-          <fieldset class="border p-3 mb-4 rounded">
-            <legend class="float-none w-auto px-2 fw-semibold text-primary">Plan de trabajo (demo)</legend>
-            <div class="row g-3">
-              <div class="col-md-6">
-                <label class="form-label">Nombre de etapa</label>
-                <input type="text" name="planTrabajo.etapas[0].nombre" class="form-control" required>
+            <!-- Contenedor de todas las etapas -->
+            <div id="etapasContainer" class="d-flex flex-column gap-3">
+
+              <!-- Primera etapa (index 0) -->
+              <div class="etapa-row border rounded p-3" data-index="0">
+                <div class="row g-3 align-items-end">
+                  <div class="col-md-6">
+                    <label class="form-label">Nombre de etapa</label>
+                    <input type="text"
+                           class="form-control etapa-nombre"
+                           placeholder="Nombre de la etapa"
+                           required>
+                  </div>
+                  <div class="col-md-3">
+                    <label class="form-label">Inicio</label>
+                    <input type="date"
+                           class="form-control etapa-inicio"
+                           required>
+                  </div>
+                  <div class="col-md-3">
+                    <label class="form-label">Fin</label>
+                    <input type="date"
+                           class="form-control etapa-fin"
+                           required>
+                  </div>
+                </div>
+                <div class="mt-2 text-end">
+                  <button type="button"
+                          class="btn btn-sm btn-outline-danger btn-remove-etapa"
+                          disabled>
+                    Quitar
+                  </button>
+                </div>
               </div>
-              <div class="col-md-3">
-                <label class="form-label">Inicio</label>
-                <input type="date" id="etapaIniInput" name="planTrabajo.etapas[0].fechaInicioPrevista" class="form-control" required>
-              </div>
-              <div class="col-md-3">
-                <label class="form-label">Fin</label>
-                <input type="date" id="etapaFinInput" name="planTrabajo.etapas[0].fechaFinPrevista" class="form-control" required>
-              </div>
+
+            </div>
+
+            <div class="mt-3">
+              <button type="button" id="btnAddEtapa" class="btn btn-outline-primary btn-sm">
+                Agregar etapa
+              </button>
+              <small class="text-muted ms-2">(máximo 5 etapas)</small>
             </div>
           </fieldset>
 
@@ -111,8 +128,20 @@
   </div>
 
   <script>
+    // Constantes de validación
     const VALID_CURRENCIES = ["ARS", "USD", "EUR", "BRL", "UYU", "CLP"];
-    const VALID_RUBROS = ["Desarrollo", "Testing", "Gestión", "Infraestructura", "Diseño", "Documentación", "Capacitación", "Soporte", "Otro"];
+    const VALID_RUBROS = [
+      "Desarrollo",
+      "Testing",
+      "Gestión",
+      "Infraestructura",
+      "Diseño",
+      "Documentación",
+      "Capacitación",
+      "Soporte",
+      "Otro"
+    ];
+    const MAX_ETAPAS = 5;
 
     function qp(name){ return new URLSearchParams(location.search).get(name); }
 
@@ -126,149 +155,187 @@
       }
     })();
 
-    function formatDateISO(date) {
-      return date.toISOString().split('T')[0];
+    // --------- ETAPAS DINÁMICAS Y FECHAS ---------
+
+    function createEtapaRow(index) {
+      const div = document.createElement("div");
+      div.className = "etapa-row border rounded p-3";
+      div.dataset.index = String(index);
+      div.innerHTML = `
+        <div class="row g-3 align-items-end">
+          <div class="col-md-6">
+            <label class="form-label">Nombre de etapa</label>
+            <input type="text"
+                   class="form-control etapa-nombre"
+                   placeholder="Nombre de la etapa"
+                   required>
+          </div>
+          <div class="col-md-3">
+            <label class="form-label">Inicio</label>
+            <input type="date"
+                   class="form-control etapa-inicio"
+                   required>
+          </div>
+          <div class="col-md-3">
+            <label class="form-label">Fin</label>
+            <input type="date"
+                   class="form-control etapa-fin"
+                   required>
+          </div>
+        </div>
+        <div class="mt-2 text-end">
+          <button type="button"
+                  class="btn btn-sm btn-outline-danger btn-remove-etapa">
+            Quitar
+          </button>
+        </div>
+      `;
+      return div;
     }
 
-    function initializeDateRestrictions() {
+    function renumerarEtapas() {
+      const filas = document.querySelectorAll(".etapa-row");
+      filas.forEach((row, idx) => {
+        row.dataset.index = String(idx);
+        const btnRemove = row.querySelector(".btn-remove-etapa");
+        btnRemove.disabled = (filas.length === 1 && idx === 0);
+      });
+    }
+
+    // Recalcula los min de TODAS las etapas según hoy y las fechas de fin anteriores
+    function recalcularMinimos() {
+      const rows = Array.from(document.querySelectorAll(".etapa-row"));
+
       const today = new Date();
       today.setHours(0, 0, 0, 0);
-      const todayISO = formatDateISO(today);
+      const todayISO = today.toISOString().split("T")[0];
 
-      const metaIniInput = document.getElementById("metaIniInput");
-      const metaFinInput = document.getElementById("metaFinInput");
-      const etapaIniInput = document.getElementById("etapaIniInput");
-      const etapaFinInput = document.getElementById("etapaFinInput");
+      let prevEnd = todayISO;  // por defecto hoy
 
-      metaIniInput.min = todayISO;
-      metaFinInput.min = todayISO;
+      rows.forEach(row => {
+        const ini = row.querySelector(".etapa-inicio");
+        const fin = row.querySelector(".etapa-fin");
 
-      metaIniInput.addEventListener("change", () => {
-        const metaIniVal = metaIniInput.value;
-        if (metaIniVal) {
-          metaFinInput.min = metaIniVal;
-          etapaIniInput.min = metaIniVal;
-        }
-      });
+        ini.min = prevEnd;
+        fin.min = prevEnd;
 
-      metaFinInput.addEventListener("change", () => {
-        const metaFinVal = metaFinInput.value;
-        if (metaFinVal) {
-          etapaFinInput.max = metaFinVal;
-        }
-      });
-
-      etapaIniInput.addEventListener("change", () => {
-        const etapaIniVal = etapaIniInput.value;
-        if (etapaIniVal) {
-          etapaFinInput.min = etapaIniVal;
-        }
-      });
-
-      metaIniInput.addEventListener("change", () => {
-        const metaIniVal = metaIniInput.value;
-        if (metaIniVal) {
-          etapaIniInput.min = metaIniVal;
-          if (etapaIniInput.value && etapaIniInput.value < metaIniVal) {
-            etapaIniInput.value = "";
-            etapaFinInput.value = "";
-          }
-        }
-      });
-
-      metaFinInput.addEventListener("change", () => {
-        const metaFinVal = metaFinInput.value;
-        if (metaFinVal) {
-          etapaFinInput.max = metaFinVal;
-          if (etapaFinInput.value && etapaFinInput.value > metaFinVal) {
-            etapaFinInput.value = "";
-          }
+        if (fin.value) {
+          prevEnd = fin.value;
         }
       });
     }
+
+    document.addEventListener("DOMContentLoaded", () => {
+      const container = document.getElementById("etapasContainer");
+      const btnAdd = document.getElementById("btnAddEtapa");
+
+      // Inicial: min = hoy para la primera etapa
+      recalcularMinimos();
+
+      // Cuando cambia cualquier fecha de fin, recalculamos los min de todas
+      container.addEventListener("change", (e) => {
+        const target = e.target;
+        if (target.classList.contains("etapa-fin")) {
+          recalcularMinimos();
+        }
+      });
+
+      btnAdd.addEventListener("click", () => {
+        const actuales = container.querySelectorAll(".etapa-row").length;
+        if (actuales >= MAX_ETAPAS) {
+          alert(`Sólo podés cargar hasta ${MAX_ETAPAS} etapas.`);
+          return;
+        }
+        const row = createEtapaRow(actuales);
+        container.appendChild(row);
+
+        renumerarEtapas();
+        recalcularMinimos();   // importante: rearmar min después de agregar
+      });
+
+      container.addEventListener("click", (e) => {
+        const target = e.target;
+        if (target.classList.contains("btn-remove-etapa")) {
+          const row = target.closest(".etapa-row");
+          if (!row) return;
+          if (container.querySelectorAll(".etapa-row").length === 1) return;
+          row.remove();
+          renumerarEtapas();
+          recalcularMinimos();  // importante: rearmar min después de borrar
+        }
+      });
+
+      renumerarEtapas();
+    });
+
+    // --------- VALIDACIÓN EN EL CLIENTE ---------
 
     function validateClientForm(form) {
       const errors = [];
       const nombre = (form["nombre"].value || "").trim();
       if (!nombre) errors.push({ path: "nombre", msg: "Requerido." });
 
-      const metaIni = form["metadata.fechaInicioPrevista"].value;
-      const metaFin = form["metadata.fechaFinPrevista"].value;
       const today = new Date();
       today.setHours(0, 0, 0, 0);
 
-      if (!metaIni) {
-        errors.push({ path: "metadata.fechaInicioPrevista", msg: "Requerido." });
+      // Validación de todas las etapas
+      const etapaRows = document.querySelectorAll(".etapa-row");
+      if (etapaRows.length === 0) {
+        errors.push({ path: "planTrabajo.etapas", msg: "Debe haber al menos una etapa." });
+      } else if (etapaRows.length > MAX_ETAPAS) {
+        errors.push({ path: "planTrabajo.etapas", msg: `No puede haber más de ${MAX_ETAPAS} etapas.` });
       } else {
-        const d = new Date(metaIni + "T00:00:00");
-        if (d < today) {
-          errors.push({ path: "metadata.fechaInicioPrevista", msg: "No puede ser anterior a hoy." });
-        }
-      }
+        let prevEnd = null;
 
-      if (!metaFin) {
-        errors.push({ path: "metadata.fechaFinPrevista", msg: "Requerido." });
-      } else {
-        const d = new Date(metaFin + "T00:00:00");
-        if (d < today) {
-          errors.push({ path: "metadata.fechaFinPrevista", msg: "No puede ser anterior a hoy." });
-        }
-      }
+        etapaRows.forEach((row, idx) => {
+          const etapaNombre = (row.querySelector(".etapa-nombre").value || "").trim();
+          const etapaIni = row.querySelector(".etapa-inicio").value;
+          const etapaFin = row.querySelector(".etapa-fin").value;
 
-      if (metaIni && metaFin) {
-        const dIni = new Date(metaIni + "T00:00:00");
-        const dFin = new Date(metaFin + "T00:00:00");
-        if (dFin < dIni) {
-          errors.push({ path: "metadata.fechaFinPrevista", msg: "Debe ser >= fechaInicioPrevista." });
-        }
-      }
-
-      const etapaNombre = (form["planTrabajo.etapas[0].nombre"].value || "").trim();
-      if (!etapaNombre) {
-        errors.push({ path: "planTrabajo.etapas[0].nombre", msg: "Requerido." });
-      }
-
-      const etapaIni = form["planTrabajo.etapas[0].fechaInicioPrevista"].value;
-      const etapaFin = form["planTrabajo.etapas[0].fechaFinPrevista"].value;
-
-      if (!etapaIni) {
-        errors.push({ path: "planTrabajo.etapas[0].fechaInicioPrevista", msg: "Requerido." });
-      } else {
-        const d = new Date(etapaIni + "T00:00:00");
-        if (d < today) {
-          errors.push({ path: "planTrabajo.etapas[0].fechaInicioPrevista", msg: "No puede ser anterior a hoy." });
-        }
-        if (metaIni) {
-          const dMeta = new Date(metaIni + "T00:00:00");
-          if (d < dMeta) {
-            errors.push({ path: "planTrabajo.etapas[0].fechaInicioPrevista", msg: "No puede ser anterior al inicio del proyecto." });
+          if (!etapaNombre) {
+            errors.push({ path: `planTrabajo.etapas[${idx}].nombre`, msg: "Requerido." });
           }
-        }
-      }
 
-      if (!etapaFin) {
-        errors.push({ path: "planTrabajo.etapas[0].fechaFinPrevista", msg: "Requerido." });
-      } else {
-        const d = new Date(etapaFin + "T00:00:00");
-        if (d < today) {
-          errors.push({ path: "planTrabajo.etapas[0].fechaFinPrevista", msg: "No puede ser anterior a hoy." });
-        }
-        if (metaFin) {
-          const dMeta = new Date(metaFin + "T00:00:00");
-          if (d > dMeta) {
-            errors.push({ path: "planTrabajo.etapas[0].fechaFinPrevista", msg: "No puede superar el fin del proyecto." });
+          let dIni = null;
+          let dFin = null;
+
+          if (!etapaIni) {
+            errors.push({ path: `planTrabajo.etapas[${idx}].fechaInicioPrevista`, msg: "Requerido." });
+          } else {
+            dIni = new Date(etapaIni + "T00:00:00");
+            if (dIni < today) {
+              errors.push({ path: `planTrabajo.etapas[${idx}].fechaInicioPrevista`, msg: "No puede ser anterior a hoy." });
+            }
+            if (prevEnd && dIni < prevEnd) {
+              errors.push({
+                path: `planTrabajo.etapas[${idx}].fechaInicioPrevista`,
+                msg: "Debe ser mayor o igual a la fecha de fin de la etapa anterior."
+              });
+            }
           }
-        }
+
+          if (!etapaFin) {
+            errors.push({ path: `planTrabajo.etapas[${idx}].fechaFinPrevista`, msg: "Requerido." });
+          } else {
+            dFin = new Date(etapaFin + "T00:00:00");
+            if (dFin < today) {
+              errors.push({ path: `planTrabajo.etapas[${idx}].fechaFinPrevista`, msg: "No puede ser anterior a hoy." });
+            }
+            if (dIni && dFin < dIni) {
+              errors.push({
+                path: `planTrabajo.etapas[${idx}].fechaFinPrevista`,
+                msg: "Debe ser mayor o igual a la fecha de inicio de la etapa."
+              });
+            }
+          }
+
+          if (dFin) {
+            prevEnd = dFin;
+          }
+        });
       }
 
-      if (etapaIni && etapaFin) {
-        const dIni = new Date(etapaIni + "T00:00:00");
-        const dFin = new Date(etapaFin + "T00:00:00");
-        if (dFin < dIni) {
-          errors.push({ path: "planTrabajo.etapas[0].fechaFinPrevista", msg: "Debe ser >= fechaInicioPrevista." });
-        }
-      }
-
+      // Plan económico
       const moneda = form["planEconomico.monedaBase"].value;
       if (!moneda) {
         errors.push({ path: "planEconomico.monedaBase", msg: "Requerido." });
@@ -310,6 +377,8 @@
       document.getElementById("resultado").innerHTML = html;
     }
 
+    // --------- SUBMIT DEL FORM ---------
+
     document.getElementById("proyectoForm").addEventListener("submit", async (e) => {
       e.preventDefault();
       const form = e.target;
@@ -320,20 +389,22 @@
         return;
       }
 
+      // Construimos el array de etapas para el JSON
+      const etapasPayload = [];
+      document.querySelectorAll(".etapa-row").forEach(row => {
+        etapasPayload.push({
+          nombre: row.querySelector(".etapa-nombre").value,
+          fechaInicioPrevista: row.querySelector(".etapa-inicio").value,
+          fechaFinPrevista: row.querySelector(".etapa-fin").value,
+        });
+      });
+
       const data = {
         caseId: qp("case"),
         nombre: form["nombre"].value,
         descripcion: form["descripcion"].value,
-        metadata: {
-          fechaInicioPrevista: form["metadata.fechaInicioPrevista"].value,
-          fechaFinPrevista: form["metadata.fechaFinPrevista"].value,
-        },
         planTrabajo: {
-          etapas: [{
-            nombre: form["planTrabajo.etapas[0].nombre"].value,
-            fechaInicioPrevista: form["planTrabajo.etapas[0].fechaInicioPrevista"].value,
-            fechaFinPrevista: form["planTrabajo.etapas[0].fechaFinPrevista"].value,
-          }]
+          etapas: etapasPayload
         },
         planEconomico: {
           monedaBase: form["planEconomico.monedaBase"].value,
@@ -364,8 +435,6 @@
           `<pre class="bg-light border p-3 mt-3">${JSON.stringify(json, null, 2)}</pre>`;
       }
     });
-
-    document.addEventListener("DOMContentLoaded", initializeDateRestrictions);
   </script>
 </body>
 </html>
